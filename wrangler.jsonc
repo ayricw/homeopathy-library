@@ -37,7 +37,7 @@
         {
           "binding": "DB",
           "database_name": "homeopathy-library-dev",
-          "database_id": "REPLACE_WITH_DEV_DATABASE_ID",
+          "database_id": "6383eec8-66b0-4b5c-852a-cfdb05a37364",
           "migrations_dir": "migrations"
         }
       ],
