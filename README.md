@@ -1,6 +1,6 @@
 # Homeopathy Library
 
-A private, searchable library of homeopathy books. See `AGENTS.md` for the rules and the plan.
+A private, searchable library of homeopathy books. See `AGENTS.md` for the rules and the plan, and `DEPLOY.md` for the private Cloudflare deployment.
 
 ## Run it locally (Windows, macOS or Linux)
 

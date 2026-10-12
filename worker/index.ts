@@ -1,7 +1,8 @@
 import { buildMatchQuery } from "../shared/query";
+import { checkAccess, type AccessConfig } from "./access";
 import { decodeUtf8, sha256Hex, type Issue, type Passage } from "../shared/text";
 
-export interface Env {
+export interface Env extends AccessConfig {
   DB: D1Database;
   LIBRARY: R2Bucket;
   ASSETS: Fetcher;
@@ -15,6 +16,15 @@ const json = (data: unknown, status = 200) =>
     headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
   });
 
+function withSecurityHeaders(res: Response) {
+  const out = new Response(res.body, res);
+  out.headers.set("x-content-type-options", "nosniff");
+  out.headers.set("referrer-policy", "no-referrer");
+  out.headers.set("x-frame-options", "DENY");
+  out.headers.set("x-robots-tag", "noindex, nofollow");
+  return out;
+}
+
 class HttpError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -24,8 +34,25 @@ class HttpError extends Error {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
+    // Every path (pages, API, original files) requires Access outside local development.
+    // "local" skips Access only on this machine, so a mistaken deploy of the local config stays locked.
+    const isLocalHost = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    if (env.ENVIRONMENT !== "local" || !isLocalHost) {
+      const access = await checkAccess(request, env);
+      if (!access.ok) {
+        return new Response(`${access.reason}\n`, {
+          status: access.status,
+          headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+        });
+      }
+    }
+    if (!url.pathname.startsWith("/api/")) return withSecurityHeaders(await env.ASSETS.fetch(request));
     try {
+      // Reject cross-site writes: browsers send Origin on POST.
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        const origin = request.headers.get("origin");
+        if (origin && origin !== url.origin) throw new HttpError(403, "Cross-site request refused");
+      }
       return await route(request, url, env);
     } catch (err) {
       if (err instanceof HttpError) return json({ error: err.message }, err.status);
@@ -40,6 +67,7 @@ async function route(request: Request, url: URL, env: Env): Promise<Response> {
   const method = request.method;
   let m: RegExpMatchArray | null;
 
+  if (method === "GET" && path === "/api/config") return json({ environment: env.ENVIRONMENT, allowImports: env.ALLOW_IMPORTS === "true" });
   if (method === "GET" && path === "/api/sources") return listSources(env);
   if (method === "GET" && (m = path.match(/^\/api\/sources\/([\w-]+)$/))) return getSource(env, m[1]);
   if (method === "GET" && (m = path.match(/^\/api\/sources\/([\w-]+)\/original$/))) return getOriginal(env, m[1]);

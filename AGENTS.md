@@ -24,7 +24,7 @@ A private, searchable reference library of homeopathy books and resources for a 
 | Original files and extracted text | R2: `originals/<sha256>/<filename>`, `extracted/<sha256>.txt`. |
 | Semantic search (later) | Vectorize, added only after keyword search is in use. |
 | Answers (later) | Claude API, called from the Worker only, grounded in retrieved passages. |
-| Access | Cloudflare Access in front of the deployed Worker. |
+| Access | Cloudflare Access on the Worker's workers.dev URL, plus a fail-closed JWT and email check in the Worker on every path (`worker/access.ts`). Preview URLs are disabled. See `DEPLOY.md`. |
 
 Check the current official Cloudflare and Anthropic documentation before choosing integration details, and record any architecture change here with the reason.
 
@@ -34,7 +34,9 @@ Check the current official Cloudflare and Anthropic documentation before choosin
 - `shared/query.ts`: converts user input to a safe FTS5 query (every term quoted).
 - `worker/index.ts`: the API (sources, search, passages with context, imports).
 - `migrations/`: D1 schema. Add new numbered files; never edit an applied migration.
-- `scripts/import.ts`: CLI importer. `scripts/smoke.ts`: end-to-end checks against a local Worker.
+- `shared/importer.ts`: the import procedure, used by `scripts/import.ts` (CLI, local) and the Import page (browser, deployed dev).
+- `worker/access.ts`: Cloudflare Access token and email allow-list check.
+- `scripts/smoke.ts`: end-to-end checks against a local Worker. `scripts/check-deployed.ts`: checks a deployed environment (Access blocks anonymous requests; D1, R2 and FTS consistency).
 - `library/sources/*.json`: metadata for each source. `library/originals/`: book files (ignored by Git).
 - `src/`: the React UI.
 
@@ -72,7 +74,7 @@ npm run smoke     # end-to-end: import, duplicate, resume, search, references (t
 ## Implementation plan
 
 1. **Milestone 1 (done locally):** import a complete UTF-8 text file, show source metadata, keyword search with filters, and a passage view with context and chapter/page/line references.
-2. **Private dev deploy:** create the `homeopathy-library-dev` D1 database and R2 bucket, apply migrations remotely, deploy `env.dev`, put Cloudflare Access in front, and validate the Access JWT in the Worker.
+2. **Private dev deploy (in progress):** follow `DEPLOY.md`. Deploys run from the owner's PC because the cloud workspace cannot reach Cloudflare.
 3. **Library growth:** more sources, a correction workflow, and comparison views across sources for the same remedy or symptom.
 4. **PDF and OCR:** extraction with page numbers from the PDF itself, and confidence recorded for OCR text.
 5. **Semantic search:** Vectorize index `homeopathy-library-dev-passages` alongside keyword search.

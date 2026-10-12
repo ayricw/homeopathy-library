@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { reflow } from "../shared/text";
+import { ImportPage } from "./ImportPage";
 import { get, type PassageRef, type PassageResponse, type SearchResponse, type Source, type SourceDetail } from "./api";
 
 // ---------- tiny hash router: #/search?q=..  #/passage/12  #/sources  #/sources/id ----------
@@ -44,11 +45,13 @@ function useFetch<T>(path: string | null) {
 
 export function App() {
   const { path, params } = useRoute();
+  const config = useFetch<{ environment: string; allowImports: boolean }>("/api/config");
   let page: ReactNode;
   let m: RegExpMatchArray | null;
   if ((m = path.match(/^\/passage\/(\d+)$/))) page = <PassagePage id={m[1]} q={params.get("q") ?? ""} />;
   else if ((m = path.match(/^\/sources\/([\w-]+)$/))) page = <SourcePage id={m[1]} />;
   else if (path === "/sources") page = <SourcesPage />;
+  else if (path === "/import") page = <ImportPage />;
   else page = <SearchPage params={params} />;
 
   return (
@@ -60,6 +63,7 @@ export function App() {
         <nav>
           <a href="#/search">Search</a>
           <a href="#/sources">Sources</a>
+          {config.data?.allowImports && <a href="#/import">Import</a>}
         </nav>
       </header>
       <main>{page}</main>

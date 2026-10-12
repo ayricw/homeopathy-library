@@ -10,7 +10,10 @@
     "test": "vitest run",
     "typecheck": "tsc",
     "smoke": "tsx scripts/smoke.ts",
-    "check": "npm run typecheck && npm test"
+    "check": "npm run typecheck && npm test",
+    "deploy:dev": "cross-env CLOUDFLARE_ENV=dev vite build && wrangler deploy",
+    "db:migrate:dev": "wrangler d1 migrations apply DB --env dev --remote",
+    "check:deployed": "tsx scripts/check-deployed.ts"
   },
   "license": "UNLICENSED",
   "devDependencies": {
@@ -20,6 +23,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "cross-env": "^10.1.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
@@ -27,6 +31,7 @@
     "wrangler": "^4.149.0"
   },
   "dependencies": {
+    "jose": "^6.2.12",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
