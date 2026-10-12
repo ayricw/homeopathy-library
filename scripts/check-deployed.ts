@@ -34,7 +34,9 @@ function check(name: string, ok: boolean, detail?: unknown) {
 
 const isWin = process.platform === "win32";
 function wrangler(argv: string[], binary = false) {
-  const r = spawnSync(isWin ? "npx.cmd" : "npx", ["wrangler", ...argv], {
+  // With shell: true (needed for npx.cmd on Windows) arguments are joined unquoted, so quote any with spaces.
+  const quoted = isWin ? argv.map((a) => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '""')}"` : a)) : argv;
+  const r = spawnSync(isWin ? "npx.cmd" : "npx", ["wrangler", ...quoted], {
     encoding: binary ? "buffer" : "utf8",
     shell: isWin,
     maxBuffer: 64 * 1024 * 1024,
