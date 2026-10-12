@@ -1,0 +1,56 @@
+// Cloudflare configuration for homeopathy-library.
+// Top level = local development only (local D1/R2 under .wrangler/, nothing in your account).
+// env.dev and env.production are separate deployments with separate resources.
+// Resource IDs are not secrets; secrets go in `wrangler secret put` or .dev.vars (ignored by Git).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "homeopathy-library-local",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "observability": { "enabled": true },
+  "vars": { "ENVIRONMENT": "local", "ALLOW_IMPORTS": "true" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "homeopathy-library-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "LIBRARY", "bucket_name": "homeopathy-library-local" }],
+
+  "env": {
+    "dev": {
+      "name": "homeopathy-library-dev",
+      "workers_dev": true,
+      "vars": { "ENVIRONMENT": "dev", "ALLOW_IMPORTS": "true" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "homeopathy-library-dev",
+          "database_id": "REPLACE_WITH_DEV_DATABASE_ID",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [{ "binding": "LIBRARY", "bucket_name": "homeopathy-library-dev" }]
+    },
+    "production": {
+      "name": "homeopathy-library-prod",
+      "workers_dev": false,
+      "vars": { "ENVIRONMENT": "production", "ALLOW_IMPORTS": "false" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "homeopathy-library-prod",
+          "database_id": "REPLACE_WITH_PROD_DATABASE_ID",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [{ "binding": "LIBRARY", "bucket_name": "homeopathy-library-prod" }]
+    }
+  }
+}

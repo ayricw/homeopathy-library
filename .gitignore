@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
+# Book files stay out of Git; originals are preserved in R2 by the importer.
+library/originals/*
+!library/originals/README.md
+*.log

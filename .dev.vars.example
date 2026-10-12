@@ -1,0 +1,3 @@
+# Copy to .dev.vars for local development. .dev.vars is ignored by Git.
+# Not needed for milestone 1. Used from the Claude answers stage onward.
+ANTHROPIC_API_KEY=sk-ant-REPLACE_ME

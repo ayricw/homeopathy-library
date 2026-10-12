@@ -1,0 +1,46 @@
+The Project Gutenberg eBook of A Synthetic Test Book
+
+This file is invented test data for the importer. It is not a real book.
+
+Title: A Synthetic Test Book
+
+*** START OF THE PROJECT GUTENBERG EBOOK A SYNTHETIC TEST BOOK ***
+
+
+
+
+A Synthetic Test Book.
+
+
+PREFACE.
+
+This preface paragraph exists so the importer has text before the first
+section heading. It is wrapped across several lines on purpose.
+
+
+ALPHA EXAMPLE.
+
+COMMON NAME, Alpha test plant.
+
+PREPARATION.--The fresh test plant is described here in invented words
+so that keyword search has something to find, such as the word
+quillwort and the phrase burning sensation.
+
+A second paragraph about alpha mentions the dry cough and restless
+evenings reported by an imaginary writer in 1899.
+
+
+BETA EXAMPLE.
+
+COMMON NAME, Beta test mineral.
+
+Beta paragraph one talks about a throbbing headache and nothing else of
+note. The word café checks accented characters.
+
+Beta paragraph two repeats burning sensation so phrase search returns
+more than one section.
+
+*** END OF THE PROJECT GUTENBERG EBOOK A SYNTHETIC TEST BOOK ***
+
+Project Gutenberg license boilerplate would follow here and must not be
+imported as book text.
