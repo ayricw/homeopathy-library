@@ -1,9 +1,10 @@
 // Reads one repertory out of an OOREP PostgreSQL dump (the `COPY ... FROM stdin;` blocks) and turns it
-// into SQLite INSERT statements for D1. Pure and deterministic: the same dump gives the same SQL.
+// into the compact data file the Symptoms page loads. Pure and deterministic: the same dump gives the same file.
+
+import type { RepertoryFile } from "./repertory";
 
 export interface RepertoryMeta {
   id: string;
-  id_base: number;
   oorep_abbrev: string;
   title: string;
   author: string;
@@ -68,69 +69,28 @@ export function parseOorep(dump: string, abbrev: string): ParsedRepertory {
     }
   }
   const kept = new Set(rubrics.map((r) => r.sourceId));
-  const used = entries.filter((e) => kept.has(e.rubric) && allRemedies.has(e.remedy) && e.grade >= 1 && e.grade <= 4);
+  const used = entries.filter((e) => kept.has(e.rubric) && allRemedies.has(e.remedy) && e.grade >= 1 && e.grade <= 3);
   const remedies = new Map([...new Set(used.map((e) => e.remedy))].sort((a, b) => a - b).map((id) => [id, allRemedies.get(id)!]));
   return { remedies, rubrics, entries: used };
 }
 
-const q = (v: string | number | null) => (v === null ? "NULL" : typeof v === "number" ? String(v) : `'${v.replace(/'/g, "''")}'`);
-
-/** Groups row values into INSERT statements below D1's 100 KB statement limit. */
-function inserts(head: string, rows: string[], maxBytes = 20_000): string[] {
-  const out: string[] = [];
-  let batch: string[] = [];
-  let size = head.length;
-  for (const r of rows) {
-    if (batch.length && size + r.length + 2 > maxBytes) {
-      out.push(`${head}\n${batch.join(",\n")};`);
-      batch = [];
-      size = head.length;
-    }
-    batch.push(r);
-    size += r.length + 2;
+/** Builds the data file: remedies once, then each rubric with its remedies packed as remedyIndex * 4 + grade. */
+export function repertoryFile(meta: RepertoryMeta, parsed: ParsedRepertory, file: { name: string; sha256: string }): RepertoryFile {
+  const { oorep_abbrev: _, ...source } = meta;
+  const remedyIds = [...parsed.remedies.keys()];
+  const index = new Map(remedyIds.map((id, i) => [id, i]));
+  const byRubric = new Map<number, Map<number, number>>();
+  for (const e of parsed.entries) {
+    const m = byRubric.get(e.rubric) ?? new Map<number, number>();
+    m.set(index.get(e.remedy)!, e.grade); // a repeated rubric/remedy pair keeps the last grade
+    byRubric.set(e.rubric, m);
   }
-  if (batch.length) out.push(`${head}\n${batch.join(",\n")};`);
-  return out;
-}
-
-/**
- * SQL that loads the repertory. Every insert is OR IGNORE with fixed ids, so running it twice changes
- * nothing and an interrupted run can simply be repeated.
- */
-export function repertorySql(meta: RepertoryMeta, parsed: ParsedRepertory, file: { name: string; sha256: string }): string[] {
-  const base = meta.id_base * 10_000_000;
-  const counts = new Map<number, number>();
-  for (const e of parsed.entries) counts.set(e.rubric, (counts.get(e.rubric) ?? 0) + 1);
-  return [
-    `INSERT OR IGNORE INTO repertories (id, id_base, title, author, edition, publication_year, publisher, language, source_url, attribution, reuse_terms, notes, original_filename, sha256) VALUES (${[
-      meta.id,
-      meta.id_base,
-      meta.title,
-      meta.author,
-      meta.edition,
-      meta.publication_year,
-      meta.publisher,
-      meta.language,
-      meta.source_url,
-      meta.attribution,
-      meta.reuse_terms,
-      meta.notes,
-      file.name,
-      file.sha256,
-    ]
-      .map(q)
-      .join(", ")});`,
-    ...inserts(
-      "INSERT OR IGNORE INTO remedies (id, abbrev, name) VALUES",
-      [...parsed.remedies].map(([id, r]) => `(${id}, ${q(r.abbrev)}, ${q(r.name)})`),
-    ),
-    ...inserts(
-      "INSERT OR IGNORE INTO rubrics (id, repertory_id, chapter, path, remedy_count) VALUES",
-      parsed.rubrics.map((r) => `(${base + r.sourceId}, ${q(meta.id)}, ${q(r.chapter)}, ${q(r.path)}, ${counts.get(r.sourceId) ?? 0})`),
-    ),
-    ...inserts(
-      "INSERT OR IGNORE INTO rubric_remedies (rubric_id, remedy_id, grade) VALUES",
-      parsed.entries.map((e) => `(${base + e.rubric},${e.remedy},${e.grade})`),
-    ),
-  ];
+  return {
+    format: 1,
+    source: { ...source, original_filename: file.name, sha256: file.sha256 },
+    remedies: remedyIds.map((id) => [parsed.remedies.get(id)!.abbrev, parsed.remedies.get(id)!.name]),
+    rubrics: parsed.rubrics
+      .filter((r) => byRubric.has(r.sourceId))
+      .map((r) => [r.path, [...byRubric.get(r.sourceId)!].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([rem, grade]) => rem * 4 + grade)]),
+  };
 }

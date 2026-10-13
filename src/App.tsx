@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { reflow } from "../shared/text";
 import { ImportPage } from "./ImportPage";
 import { excerpt, formatReferences, groupBySource, isCollected, useCollected, type CollectedItem } from "./collect";
-import { get, post, type Repertory, type RepertorizeResponse, type Rubric, type RubricDetail, type SymptomResponse, type PassageRef, type PassageResponse, type SearchResponse, type Source, type SourceDetail } from "./api";
+import { repertorize, rubricRemedies, searchRubrics, tokenize, MAX_CASE_RUBRICS, type RepertoryFile, type Rubric } from "../shared/repertory";
+import { get, post, type SymptomResponse, type PassageRef, type PassageResponse, type SearchResponse, type Source, type SourceDetail } from "./api";
 
 // ---------- tiny hash router: #/search?q=..  #/passage/12  #/sources  #/sources/id ----------
 
@@ -363,14 +364,44 @@ const caseMemory: { rubrics: Rubric[]; method: "symptoms" | "grades"; tab: "repe
   tab: "repertory",
 };
 
+// The repertory file is loaded once per page load and searched in the browser.
+let repertoryLoad: Promise<{ data: RepertoryFile; tokens: string[][] } | null> | null = null;
+function loadRepertory() {
+  repertoryLoad ??= fetch("/data/repertory.json", { headers: { accept: "application/json" } })
+    .then(async (res) => {
+      // A missing file falls through to the app's index.html, so check the type.
+      if (!res.ok || !(res.headers.get("content-type") ?? "").includes("json")) return null;
+      const data = (await res.json()) as RepertoryFile;
+      return { data, tokens: tokenize(data) };
+    })
+    .catch((e) => {
+      repertoryLoad = null;
+      throw e;
+    });
+  return repertoryLoad;
+}
+
+function useRepertory() {
+  const [state, setState] = useState<{ rep?: { data: RepertoryFile; tokens: string[][] } | null; error?: string }>({});
+  useEffect(() => {
+    let live = true;
+    loadRepertory()
+      .then((rep) => live && setState({ rep }))
+      .catch((e: Error) => live && setState({ error: e.message }));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return state;
+}
+
 function SymptomsPage() {
-  const reps = useFetch<{ repertories: Repertory[] }>("/api/repertories");
+  const rep = useRepertory();
   const [tab, setTab] = useState(caseMemory.tab);
   const choose = (t: typeof tab) => {
     caseMemory.tab = t;
     setTab(t);
   };
-  const hasRepertory = (reps.data?.repertories.length ?? 0) > 0;
   return (
     <section className="wide">
       <h1>Symptom search</h1>
@@ -383,10 +414,14 @@ function SymptomsPage() {
         </button>
       </div>
       {tab === "repertory" ? (
-        reps.data && !hasRepertory ? (
-          <p className="muted">No repertory is loaded yet. See README.md for how to import one.</p>
+        rep.error ? (
+          <p className="error">The repertory could not be loaded: {rep.error}</p>
+        ) : rep.rep === undefined ? (
+          <p className="muted">Loading the repertory…</p>
+        ) : rep.rep === null ? (
+          <p className="muted">No repertory is included in this deployment yet. See README.md for how to add one.</p>
         ) : (
-          <RepertoryCase repertories={reps.data?.repertories ?? []} />
+          <RepertoryCase data={rep.rep.data} tokens={rep.rep.tokens} />
         )
       ) : (
         <BookSymptoms />
@@ -397,28 +432,26 @@ function SymptomsPage() {
 
 const GRADE_LABEL = ["", "grade 1", "grade 2", "grade 3", "grade 4"];
 
-function RubricRemedies({ id }: { id: number }) {
-  const { data, loading, error } = useFetch<RubricDetail>(`/api/rubrics/${id}`);
-  if (!data) return <Status loading={loading} error={error} />;
+function RubricRemedies({ data, id }: { data: RepertoryFile; id: number }) {
+  const list = rubricRemedies(data, id);
   return (
     <p className="rubric-remedies">
-      {data.remedies.map((r, i) => (
-        <span key={r.id} className={`g${r.grade}`} title={`${r.name}, ${GRADE_LABEL[r.grade]}`}>
+      {list.map((r, i) => (
+        <span key={r.abbrev} className={`g${r.grade}`} title={`${r.name}, ${GRADE_LABEL[r.grade]}`}>
           {r.abbrev}
-          {i < data.remedies.length - 1 ? ", " : ""}
+          {i < list.length - 1 ? ", " : ""}
         </span>
       ))}
     </p>
   );
 }
 
-function RepertoryCase({ repertories }: { repertories: Repertory[] }) {
+function RepertoryCase({ data: rep, tokens }: { data: RepertoryFile; tokens: string[][] }) {
   const [rubrics, setRubricsState] = useState<Rubric[]>(caseMemory.rubrics);
   const [method, setMethodState] = useState(caseMemory.method);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<number | null>(null);
-  const [result, setResult] = useState<{ data?: RepertorizeResponse; error?: string; loading: boolean }>({ loading: false });
   const setRubrics = (next: Rubric[]) => {
     caseMemory.rubrics = next;
     setRubricsState(next);
@@ -427,33 +460,26 @@ function RepertoryCase({ repertories }: { repertories: Repertory[] }) {
     caseMemory.method = m;
     setMethodState(m);
   };
-  const found = useFetch<{ rubrics: Rubric[] }>(query ? `/api/rubrics?${new URLSearchParams({ q: query, limit: "40" })}` : null);
-  const ids = rubrics.map((r) => r.id);
-  const key = `${ids.join(",")}|${method}`;
+  const found = useMemo(() => (query ? searchRubrics(rep, tokens, query, 40) : null), [rep, tokens, query]);
+  // The case is kept by rubric id; drop any that no longer exist in a newer repertory file.
+  const caseRubrics = rubrics.filter((r) => rep.rubrics[r.id]?.[0] === r.path);
+  const ids = caseRubrics.map((r) => r.id);
+  const ranked = useMemo(() => repertorize(rep, ids, method), [rep, ids.join(","), method]);
+  const shown = ranked.slice(0, 30);
+  const full = caseRubrics.length >= MAX_CASE_RUBRICS;
 
-  useEffect(() => {
-    if (!ids.length) return setResult({ loading: false });
-    let live = true;
-    setResult((r) => ({ ...r, loading: true, error: undefined }));
-    post<RepertorizeResponse>("/api/repertorize", { rubrics: ids, method })
-      .then((data) => live && setResult({ data, loading: false }))
-      .catch((e: Error) => live && setResult({ error: e.message, loading: false }));
-    return () => {
-      live = false;
-    };
-  }, [key]);
-
-  const add = (r: Rubric) => !ids.includes(r.id) && setRubrics([...rubrics, r]);
-  const remove = (id: number) => setRubrics(rubrics.filter((r) => r.id !== id));
-  const data = result.data;
-  const shown = data?.remedies.slice(0, 30) ?? [];
+  const add = (r: Rubric) => !ids.includes(r.id) && !full && setRubrics([...caseRubrics, r]);
+  const remove = (id: number) => setRubrics(caseRubrics.filter((r) => r.id !== id));
 
   return (
     <>
       <p className="muted">
         Find the rubric for each symptom and add it to the case. Remedies are ranked by how many of the chosen rubrics list
         them, then by their grades (1 to 3). Rubrics come from{" "}
-        {repertories.map((r) => r.title).join(", ") || "the repertory"}. This shows what the repertory lists. It is not
+        <a href={rep.source.source_url} target="_blank" rel="noopener noreferrer" title={rep.source.reuse_terms}>
+          {rep.source.title}
+        </a>{" "}
+        ({rep.rubrics.length.toLocaleString()} rubrics). Everything here runs in your browser and nothing is saved. This shows what the repertory lists. It is not
         evidence that a remedy works and it is not a prescription.
       </p>
       <form
@@ -479,10 +505,9 @@ function RepertoryCase({ repertories }: { repertories: Repertory[] }) {
 
       {query && (
         <div className="rubric-results">
-          <Status loading={found.loading} error={found.error} />
-          {found.data && found.data.rubrics.length === 0 && <p className="muted">No rubric contains all of those words.</p>}
+          {found && found.length === 0 && <p className="muted">No rubric contains all of those words.</p>}
           <ul className="rubric-list">
-            {found.data?.rubrics.map((r) => {
+            {found?.map((r) => {
               const inCase = ids.includes(r.id);
               return (
                 <li key={r.id}>
@@ -490,12 +515,12 @@ function RepertoryCase({ repertories }: { repertories: Repertory[] }) {
                     <button type="button" className="link" aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)}>
                       {r.path}
                     </button>
-                    <span className="muted count">{r.remedy_count}</span>
-                    <button type="button" className={`collect${inCase ? " on" : ""}`} disabled={inCase} onClick={() => add(r)}>
+                    <span className="muted count">{r.remedyCount}</span>
+                    <button type="button" className={`collect${inCase ? " on" : ""}`} disabled={inCase || full} onClick={() => add(r)}>
                       {inCase ? "Added ✓" : "Add"}
                     </button>
                   </div>
-                  {open === r.id && <RubricRemedies id={r.id} />}
+                  {open === r.id && <RubricRemedies data={rep} id={r.id} />}
                 </li>
               );
             })}
@@ -504,14 +529,15 @@ function RepertoryCase({ repertories }: { repertories: Repertory[] }) {
       )}
 
       <h2 className="case-head">
-        Case <span className="muted">· {rubrics.length} rubric{rubrics.length === 1 ? "" : "s"}</span>
-        {rubrics.length > 0 && (
+        Case <span className="muted">· {caseRubrics.length} rubric{caseRubrics.length === 1 ? "" : "s"}</span>
+        {caseRubrics.length > 0 && (
           <button type="button" className="secondary" onClick={() => setRubrics([])}>
             Clear case
           </button>
         )}
       </h2>
-      {rubrics.length === 0 ? (
+      {full && <p className="muted">A case can hold {MAX_CASE_RUBRICS} rubrics. Remove one to add another.</p>}
+      {caseRubrics.length === 0 ? (
         <p className="muted">No rubrics yet. Find one above and press Add.</p>
       ) : (
         <>
@@ -521,21 +547,18 @@ function RepertoryCase({ repertories }: { repertories: Repertory[] }) {
               <option value="symptoms">Rubrics covered, then grades</option>
               <option value="grades">Total grade, then rubrics covered</option>
             </select>
-            {data && (
-              <span className="muted">
-                {data.total} remed{data.total === 1 ? "y" : "ies"}
-                {data.total > shown.length ? `, top ${shown.length} shown` : ""}
-              </span>
-            )}
+            <span className="muted">
+              {ranked.length} remed{ranked.length === 1 ? "y" : "ies"}
+              {ranked.length > shown.length ? `, top ${shown.length} shown` : ""}
+            </span>
           </div>
-          <Status loading={result.loading && !data} error={result.error} />
           <div className="rep-wrap">
             <table className="rep grid">
               <thead>
                 <tr>
                   <th className="rep-rubric">Rubric</th>
                   {shown.map((m) => (
-                    <th key={m.id} className="rem" title={m.name}>
+                    <th key={m.index} className="rem" title={m.name}>
                       <span>{m.abbrev}</span>
                     </th>
                   ))}
@@ -543,7 +566,7 @@ function RepertoryCase({ repertories }: { repertories: Repertory[] }) {
                 <tr className="totals">
                   <th className="rep-rubric muted">Rubrics covered / total grade</th>
                   {shown.map((m) => (
-                    <th key={m.id}>
+                    <th key={m.index}>
                       <b>{m.covered}</b>
                       {m.total}
                     </th>
@@ -551,17 +574,17 @@ function RepertoryCase({ repertories }: { repertories: Repertory[] }) {
                 </tr>
               </thead>
               <tbody>
-                {(data?.rubrics ?? rubrics).map((r, row) => (
+                {caseRubrics.map((r, row) => (
                   <tr key={r.id}>
                     <th className="rep-rubric" scope="row">
                       <button type="button" className="remove" aria-label={`Remove ${r.path}`} onClick={() => remove(r.id)}>
                         ×
                       </button>
                       {r.path}
-                      <small>{r.remedy_count}</small>
+                      <small>{r.remedyCount}</small>
                     </th>
                     {shown.map((m) => (
-                      <td key={m.id} className="rep-cell">
+                      <td key={m.index} className="rep-cell">
                         {m.grades[row] > 0 && <span className={`dot g${m.grades[row]}`} title={`${m.name}: ${GRADE_LABEL[m.grades[row]]}`} />}
                       </td>
                     ))}

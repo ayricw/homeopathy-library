@@ -9,3 +9,6 @@ dist/
 library/originals/*
 !library/originals/README.md
 *.log
+
+# Generated repertory data (from the OOREP dump; see README).
+public/data/

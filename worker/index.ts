@@ -1,5 +1,4 @@
 import { buildMatchQuery } from "../shared/query";
-import { MAX_CASE_RUBRICS, repertorize, type RankMethod, type RubricEntry } from "../shared/repertory";
 import { MAX_SYMPTOMS, parseSymptoms, rankRemedies, type HeadingHits } from "../shared/symptoms";
 import { checkAccess, type AccessConfig } from "./access";
 import { decodeUtf8, sha256Hex, type Issue, type Passage } from "../shared/text";
@@ -75,10 +74,6 @@ async function route(request: Request, url: URL, env: Env): Promise<Response> {
   if (method === "GET" && (m = path.match(/^\/api\/sources\/([\w-]+)\/original$/))) return getOriginal(env, m[1]);
   if (method === "GET" && path === "/api/search") return search(env, url.searchParams);
   if (method === "POST" && path === "/api/symptoms") return symptomSearch(request, env);
-  if (method === "GET" && path === "/api/repertories") return listRepertories(env);
-  if (method === "GET" && path === "/api/rubrics") return searchRubrics(env, url.searchParams);
-  if (method === "GET" && (m = path.match(/^\/api\/rubrics\/(\d+)$/))) return getRubric(env, Number(m[1]));
-  if (method === "POST" && path === "/api/repertorize") return repertorizeCase(request, env);
   if (method === "GET" && (m = path.match(/^\/api\/passages\/(\d+)$/))) return getPassage(env, Number(m[1]), url.searchParams);
 
   if (path.startsWith("/api/imports")) {
@@ -216,79 +211,6 @@ async function symptomSearch(request: Request, env: Env) {
     results.flatMap((r) => r.results),
   );
   return json({ symptoms: symptoms.map((s) => s.label), skipped, ...ranked });
-}
-
-// ---------- Repertory ----------
-
-async function listRepertories(env: Env) {
-  const { results } = await env.DB.prepare(
-    `SELECT id, title, author, edition, publication_year, publisher, language, source_url, attribution, reuse_terms, notes,
-       (SELECT COUNT(*) FROM rubrics r WHERE r.repertory_id = p.id) AS rubric_count
-     FROM repertories p ORDER BY title`,
-  ).all();
-  return json({ repertories: results });
-}
-
-async function searchRubrics(env: Env, params: URLSearchParams) {
-  const q = params.get("q") ?? "";
-  const match = buildMatchQuery(q);
-  if (!match) return json({ query: q, rubrics: [] });
-  const limit = Math.min(Math.max(Number(params.get("limit")) || 40, 1), 100);
-  const repertory = params.get("repertory");
-  const chapter = params.get("chapter");
-  const where = ["rubrics_fts MATCH ?"];
-  const binds: unknown[] = [match];
-  if (repertory) {
-    where.push("r.repertory_id = ?");
-    binds.push(repertory);
-  }
-  if (chapter) {
-    where.push("r.chapter = ?");
-    binds.push(chapter);
-  }
-  // Every result contains all the words, so list general rubrics (fewest levels) first, then the larger ones.
-  const { results } = await env.DB.prepare(
-    `SELECT r.id, r.repertory_id, r.chapter, r.path, r.remedy_count
-     FROM rubrics_fts JOIN rubrics r ON r.id = rubrics_fts.rowid
-     WHERE ${where.join(" AND ")} AND r.remedy_count > 0
-     ORDER BY length(r.path) - length(replace(r.path, ',', '')), r.remedy_count DESC, r.path LIMIT ?`,
-  )
-    .bind(...binds, limit)
-    .all();
-  return json({ query: q, rubrics: results });
-}
-
-async function getRubric(env: Env, id: number) {
-  const rubric = await env.DB.prepare("SELECT id, repertory_id, chapter, path, remedy_count FROM rubrics WHERE id = ?").bind(id).first();
-  if (!rubric) throw new HttpError(404, "Rubric not found");
-  const { results } = await env.DB.prepare(
-    `SELECT m.id, m.abbrev, m.name, rr.grade FROM rubric_remedies rr JOIN remedies m ON m.id = rr.remedy_id
-     WHERE rr.rubric_id = ? ORDER BY rr.grade DESC, m.abbrev`,
-  )
-    .bind(id)
-    .all();
-  return json({ rubric, remedies: results });
-}
-
-// POST so the case stays out of URLs and logs. Nothing is stored.
-async function repertorizeCase(request: Request, env: Env) {
-  const body = (await request.json().catch(() => null)) as { rubrics?: unknown; method?: unknown } | null;
-  const ids = [...new Set(Array.isArray(body?.rubrics) ? body.rubrics.filter((n): n is number => Number.isInteger(n)) : [])];
-  if (ids.length > MAX_CASE_RUBRICS) throw new HttpError(400, `Choose at most ${MAX_CASE_RUBRICS} rubrics.`);
-  const method: RankMethod = body?.method === "grades" ? "grades" : "symptoms";
-  if (!ids.length) return json({ rubrics: [], remedies: [], total: 0 });
-  const marks = ids.map(() => "?").join(", ");
-  const [rubrics, entries] = await env.DB.batch([
-    env.DB.prepare(`SELECT id, repertory_id, chapter, path, remedy_count FROM rubrics WHERE id IN (${marks})`).bind(...ids),
-    env.DB.prepare(
-      `SELECT rr.rubric_id, rr.remedy_id, m.abbrev, m.name, rr.grade
-       FROM rubric_remedies rr JOIN remedies m ON m.id = rr.remedy_id WHERE rr.rubric_id IN (${marks})`,
-    ).bind(...ids),
-  ]);
-  const found = new Map((rubrics.results as { id: number }[]).map((r) => [r.id, r]));
-  const order = ids.filter((id) => found.has(id));
-  const ranked = repertorize(order, entries.results as unknown as RubricEntry[], method);
-  return json({ rubrics: order.map((id) => found.get(id)), remedies: ranked.slice(0, 60), total: ranked.length });
 }
 
 // ---------- Passage with context ----------

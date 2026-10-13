@@ -36,19 +36,14 @@ Check the source's reuse terms first. Then copy a file in `library/sources/`, gi
 
 ## Adding the repertory (Repertorium Publicum)
 
-The Repertory tab on the Symptoms page needs a repertory in the database. Repertorium Publicum (an English repertory based on Kent's, GPL v3) comes from the OOREP project's database dump.
+The Repertory tab on the Symptoms page needs the repertory data file. Repertorium Publicum (an English repertory based on Kent's, GPL v3) comes from the OOREP project's database dump.
 
 1. Download `oorep.sql.gz` from https://github.com/nondeterministic/oorep (the file is in the repository root) and save it as `library/originals/oorep.sql.gz`. Like the books, it stays out of Git.
-2. Apply the database migrations, then load the repertory:
+2. Build the data file, then deploy as usual:
 
 ```
-# local
-npm run db:migrate:local
-npm run import:repertory -- library/originals/oorep.sql.gz library/repertories/publicum.json --local
-
-# dev on Cloudflare
-npm run db:migrate:dev
-npm run import:repertory -- library/originals/oorep.sql.gz library/repertories/publicum.json --env dev
+npm run build:repertory -- library/originals/oorep.sql.gz library/repertories/publicum.json
+npm run deploy:dev
 ```
 
-The import writes about 810,000 rows in a few dozen parts. If it stops partway, run the same command again: rows already loaded are skipped.
+This writes `public/data/repertory.json` (about 7 MB, under 2 MB compressed), which ships with the app behind Cloudflare Access. Searching rubrics and ranking remedies happen in the browser, so the repertory uses no database rows and costs nothing on the free plan. Run the build again on any PC you deploy from, because the file is not in Git.
