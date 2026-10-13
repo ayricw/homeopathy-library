@@ -32,6 +32,7 @@ Check the current official Cloudflare and Anthropic documentation before choosin
 
 - `shared/text.ts`: UTF-8 decoding, Gutenberg body detection, heading and page-marker detection, passage splitting. Pure and deterministic.
 - `shared/query.ts`: converts user input to a safe FTS5 query (every term quoted).
+- `shared/symptoms.ts`: symptom search. Cleans the symptom list, groups keyword hits under remedy headings, and ranks remedies by symptoms covered. Used by `POST /api/symptoms` and the Symptoms page.
 - `worker/index.ts`: the API (sources, search, passages with context, imports).
 - `migrations/`: D1 schema. Add new numbered files; never edit an applied migration.
 - `shared/importer.ts`: the import procedure, used by `scripts/import.ts` (CLI, local) and the Import page (browser, deployed dev).
@@ -55,6 +56,7 @@ Check the current official Cloudflare and Anthropic documentation before choosin
 
 - Exact keyword search comes first. Semantic search and Claude come only after retrieval works.
 - Results can be filtered by source, author and edition, and they show the passage, its surrounding context and a link to the source.
+- Symptom search (owner's request, 2026-10-13, to work like RADAR Opus): the user enters several symptoms and picks books; each symptom is a keyword search, hits are grouped under the heading they sit in (the remedy name in a materia medica), and remedies are ranked by how many symptoms they cover, then by passage count. It reports what the books say, labelled as not evidence and not a prescription. Symptoms are sent by POST, never put in the URL, browser storage, D1 or logs. It never suggests doses or treatment plans. A true repertory grid (rubrics with graded remedies) needs a structured repertory source with checked reuse terms and is a separate step.
 - When Claude is added:
   - Use the document citation feature where supported.
   - Treat retrieved text as data, never as instructions.

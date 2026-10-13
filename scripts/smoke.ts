@@ -185,6 +185,20 @@ async function checks() {
   s = await api("/api/search?q=burning&edition=Second+edition");
   check("edition filter excludes other editions", s.body?.total === 0, s.body);
 
+  // Symptom search: remedies ranked by how many symptoms their passages mention
+  const sym = (symptoms: string[], sources: string[] = []) =>
+    api("/api/symptoms", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ symptoms, sources }) });
+  let sr = await sym(['"burning sensation"', "cough", '"throbbing headache"', "restless", "!!!"], ["test-gutenberg"]);
+  const names = (sr.body?.remedies ?? []).map((r: { remedy: string }) => r.remedy);
+  check("symptom search groups passages under remedy headings", names.join("|") === "ALPHA EXAMPLE|BETA EXAMPLE", sr.body);
+  check("symptom search ranks by symptoms covered", sr.body?.remedies?.[0]?.covered === 3 && sr.body.remedies[1].covered === 2, sr.body);
+  check("symptom search reports unsearchable lines", sr.body?.skipped?.[0] === "!!!", sr.body);
+  check("symptom cells link to a matching passage", sr.body?.remedies?.[1]?.cells?.[2]?.passageId > 0, sr.body);
+  sr = await sym(["quillwort"], ["test-paged"]);
+  check("symptom search respects the chosen books", sr.body?.total === 0, sr.body);
+  sr = await sym([]);
+  check("empty symptom search is harmless", sr.status === 200 && sr.body?.total === 0, sr);
+
   // 4. Open a result with context and references
   s = await api(`/api/search?q=${encodeURIComponent('"throbbing headache"')}`);
   const hit = s.body.results[0];

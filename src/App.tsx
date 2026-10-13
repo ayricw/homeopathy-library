@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { reflow } from "../shared/text";
 import { ImportPage } from "./ImportPage";
 import { excerpt, formatReferences, groupBySource, isCollected, useCollected, type CollectedItem } from "./collect";
-import { get, type PassageRef, type PassageResponse, type SearchResponse, type Source, type SourceDetail } from "./api";
+import { get, post, type SymptomResponse, type PassageRef, type PassageResponse, type SearchResponse, type Source, type SourceDetail } from "./api";
 
 // ---------- tiny hash router: #/search?q=..  #/passage/12  #/sources  #/sources/id ----------
 
@@ -55,6 +55,7 @@ export function App() {
   else if (path === "/sources") page = <SourcesPage />;
   else if (path === "/import") page = <ImportPage />;
   else if (path === "/collected") page = <CollectedPage />;
+  else if (path === "/symptoms") page = <SymptomsPage />;
   else page = <SearchPage params={params} />;
 
   return (
@@ -65,6 +66,7 @@ export function App() {
         </a>
         <nav>
           <a href="#/search">Search</a>
+          <a href="#/symptoms">Symptoms</a>
           <a href="#/sources">Sources</a>
           <a href="#/collected">Collected{collected.items.length > 0 && ` (${collected.items.length})`}</a>
           {config.data?.allowImports && <a href="#/import">Import</a>}
@@ -347,6 +349,135 @@ function Context({ p, q, current, children }: { p: PassageRef; q: string; curren
         {changed ? refLine(p) : [pages(p), `lines ${p.line_start}–${p.line_end}`].filter(Boolean).join(" · ")}
       </a>
       {children}
+    </section>
+  );
+}
+
+// ---------- symptom search ----------
+// Symptoms live only in this component's state: never in the URL, browser storage or the server.
+
+function SymptomsPage() {
+  const sources = useFetch<{ sources: Source[] }>("/api/sources");
+  const all = sources.data?.sources ?? [];
+  const [text, setText] = useState("");
+  const [chosen, setChosen] = useState<Set<string> | null>(null); // null = every book
+  const [state, setState] = useState<{ data?: SymptomResponse; error?: string; loading: boolean }>({ loading: false });
+  const picked = chosen ?? new Set(all.map((s) => s.id));
+  const titles = new Map(all.map((s) => [s.id, s.title]));
+
+  const toggleSource = (id: string) => {
+    const next = new Set(picked);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setChosen(next);
+  };
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const symptoms = text.split("\n").filter((l) => l.trim());
+    if (!symptoms.length || !picked.size) return;
+    setState({ loading: true });
+    post<SymptomResponse>("/api/symptoms", { symptoms, sources: chosen ? [...picked] : [] })
+      .then((data) => setState({ data, loading: false }))
+      .catch((err: Error) => setState({ error: err.message, loading: false }));
+  };
+  const data = state.data;
+
+  return (
+    <section>
+      <h1>Symptom search</h1>
+      <p className="muted">
+        Type one symptom per line. Each line is searched like the Search page, and matching passages are grouped under the
+        remedy heading they appear in. Remedies are listed by how many of your symptoms their passages mention. This shows
+        what the books say. It is not evidence that a remedy works and it is not a prescription.
+      </p>
+      <form className="symptoms" onSubmit={submit}>
+        <label htmlFor="symptoms" className="visually-hidden">
+          Symptoms, one per line
+        </label>
+        <textarea
+          id="symptoms"
+          rows={6}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={"burning pain\nworse at night\nthirst for small sips\nrestless"}
+        />
+        <fieldset className="books">
+          <legend>Books to search</legend>
+          {all.map((s) => (
+            <label key={s.id}>
+              <input type="checkbox" checked={picked.has(s.id)} onChange={() => toggleSource(s.id)} /> {s.title}
+            </label>
+          ))}
+          {all.length > 1 && (
+            <button type="button" className="secondary" onClick={() => setChosen(picked.size === all.length ? new Set() : null)}>
+              {picked.size === all.length ? "Select none" : "Select all"}
+            </button>
+          )}
+        </fieldset>
+        <button type="submit" disabled={!text.trim() || !picked.size || state.loading}>
+          Find remedies
+        </button>
+      </form>
+
+      <Status loading={state.loading} error={state.error} />
+      {data && (
+        <>
+          {data.skipped.length > 0 && <p className="muted">Skipped (no searchable words): {data.skipped.join(", ")}</p>}
+          <p className="muted">
+            {data.total === 0
+              ? "No remedy passages mention any of those symptoms. Try other words, or a prefix such as rheumat*."
+              : `${data.total} remed${data.total === 1 ? "y" : "ies"} mention at least one symptom${data.total > data.remedies.length ? `. Showing the top ${data.remedies.length}` : ""}.`}
+          </p>
+          {data.remedies.length > 0 && (
+            <div className="rep-wrap">
+              <table className="rep">
+                <thead>
+                  <tr>
+                    <th className="rep-remedy">Remedy</th>
+                    <th className="rep-score" title="Symptoms mentioned">Covers</th>
+                    {data.symptoms.map((s, i) => (
+                      <th key={i} className="rep-sym">
+                        <span>{s}</span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.remedies.map((r) => (
+                    <tr key={r.remedy} className={r.covered === data.symptoms.length ? "all" : undefined}>
+                      <th className="rep-remedy" scope="row">
+                        {r.remedy}
+                        <small>{r.sources.map((id) => titles.get(id) ?? id).join(" · ")}</small>
+                      </th>
+                      <td className="rep-score">
+                        {r.covered}/{data.symptoms.length}
+                      </td>
+                      {r.cells.map((c, i) => (
+                        <td key={i} className="rep-cell">
+                          {c.hits > 0 && c.passageId !== null ? (
+                            <a
+                              href={`#/passage/${c.passageId}?q=${encodeURIComponent(data.symptoms[i])}`}
+                              title={`${c.hits} passage${c.hits === 1 ? "" : "s"} mention "${data.symptoms[i]}". Open the first.`}
+                            >
+                              <span className={`hits h${Math.min(c.hits, 4)}`}>{c.hits}</span>
+                            </a>
+                          ) : (
+                            <span className="none" aria-label="not mentioned">·</span>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="muted small">
+            Numbers are how many passages under that remedy heading contain the symptom's words. Click a number to read the
+            first one. Grouping relies on the book's headings, so a heading that is not a remedy name can appear here.
+          </p>
+        </>
+      )}
     </section>
   );
 }

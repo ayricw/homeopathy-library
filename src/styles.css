@@ -139,3 +139,34 @@ button.secondary { background: transparent; color: var(--accent); border: 1px so
 .top { flex-wrap: wrap; }
 .top nav { flex-wrap: wrap; gap: 0.25rem 1rem; }
 .top nav a { white-space: nowrap; }
+
+.symptoms { display: grid; gap: 0.75rem; font-family: system-ui, sans-serif; }
+.symptoms textarea {
+  width: 100%; padding: 0.7rem 0.8rem; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text); font: 15px/1.5 system-ui, sans-serif; resize: vertical;
+}
+.symptoms button[type="submit"] { justify-self: start; }
+.books { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.8rem 0.7rem; font-size: 14px; }
+.books legend { color: var(--muted); padding: 0 0.25rem; }
+.books button { padding: 0.2rem 0.6rem; font-size: 13px; }
+.small { font-size: 13px; }
+.rep-wrap { overflow-x: auto; margin: 0.5rem 0; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.rep { border-collapse: collapse; font: 14px/1.35 system-ui, sans-serif; font-variant-numeric: tabular-nums; width: 100%; }
+.rep th, .rep td { border-bottom: 1px solid var(--border); padding: 0.45rem 0.5rem; }
+.rep thead th { vertical-align: bottom; color: var(--muted); font-weight: 600; font-size: 13px; }
+.rep-remedy { text-align: left; min-width: 11rem; }
+.rep tbody .rep-remedy { font-weight: 600; }
+.rep-remedy small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+.rep-score { text-align: center; white-space: nowrap; font-weight: 600; }
+.rep-sym { min-width: 5.5rem; max-width: 8rem; text-align: center; }
+.rep-sym span { display: block; overflow-wrap: break-word; }
+.rep-cell { text-align: center; }
+.rep tr.all .rep-score { color: var(--accent); }
+.hits { display: inline-block; min-width: 1.7rem; padding: 0.1rem 0.35rem; border-radius: 99px; font-weight: 600; text-decoration: none; }
+.rep-cell a { text-decoration: none; }
+.hits.h1 { background: var(--context); color: var(--text); }
+.hits.h2 { background: color-mix(in srgb, var(--accent) 30%, var(--surface)); color: var(--text); }
+.hits.h3 { background: color-mix(in srgb, var(--accent) 60%, var(--surface)); color: var(--surface); }
+.hits.h4 { background: var(--accent); color: var(--surface); }
+.none { color: var(--border); }
+@media (max-width: 560px) { .rep-remedy { min-width: 8.5rem; } }
