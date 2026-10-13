@@ -72,6 +72,37 @@ export interface SymptomResponse {
   remedies: { remedy: string; sources: string[]; covered: number; totalHits: number; cells: { hits: number; passageId: number | null }[] }[];
 }
 
+export interface Repertory {
+  id: string;
+  title: string;
+  author: string;
+  edition: string | null;
+  publication_year: number | null;
+  source_url: string;
+  attribution: string;
+  reuse_terms: string;
+  rubric_count: number;
+}
+
+export interface Rubric {
+  id: number;
+  repertory_id: string;
+  chapter: string;
+  path: string;
+  remedy_count: number;
+}
+
+export interface RubricDetail {
+  rubric: Rubric;
+  remedies: { id: number; abbrev: string; name: string; grade: number }[];
+}
+
+export interface RepertorizeResponse {
+  rubrics: Rubric[];
+  total: number;
+  remedies: { id: number; abbrev: string; name: string; covered: number; total: number; grades: number[] }[];
+}
+
 export async function post<T>(path: string, data: unknown): Promise<T> {
   const res = await fetch(path, { method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: JSON.stringify(data) });
   const body = (await res.json().catch(() => ({}))) as { error?: string };

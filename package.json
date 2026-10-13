@@ -13,7 +13,8 @@
     "check": "npm run typecheck && npm test",
     "deploy:dev": "cross-env CLOUDFLARE_ENV=dev vite build && wrangler deploy",
     "db:migrate:dev": "wrangler d1 migrations apply DB --env dev --remote",
-    "check:deployed": "tsx scripts/check-deployed.ts"
+    "check:deployed": "tsx scripts/check-deployed.ts",
+    "import:repertory": "tsx scripts/import-repertory.ts"
   },
   "license": "UNLICENSED",
   "devDependencies": {

@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { reflow } from "../shared/text";
 import { ImportPage } from "./ImportPage";
 import { excerpt, formatReferences, groupBySource, isCollected, useCollected, type CollectedItem } from "./collect";
-import { get, post, type SymptomResponse, type PassageRef, type PassageResponse, type SearchResponse, type Source, type SourceDetail } from "./api";
+import { get, post, type Repertory, type RepertorizeResponse, type Rubric, type RubricDetail, type SymptomResponse, type PassageRef, type PassageResponse, type SearchResponse, type Source, type SourceDetail } from "./api";
 
 // ---------- tiny hash router: #/search?q=..  #/passage/12  #/sources  #/sources/id ----------
 
@@ -354,9 +354,233 @@ function Context({ p, q, current, children }: { p: PassageRef; q: string; curren
 }
 
 // ---------- symptom search ----------
-// Symptoms live only in this component's state: never in the URL, browser storage or the server.
+// Symptoms and chosen rubrics live only in memory: never in the URL, browser storage or the server.
+// They survive moving between pages and are gone when the tab is closed or reloaded.
+
+const caseMemory: { rubrics: Rubric[]; method: "symptoms" | "grades"; tab: "repertory" | "books" } = {
+  rubrics: [],
+  method: "symptoms",
+  tab: "repertory",
+};
 
 function SymptomsPage() {
+  const reps = useFetch<{ repertories: Repertory[] }>("/api/repertories");
+  const [tab, setTab] = useState(caseMemory.tab);
+  const choose = (t: typeof tab) => {
+    caseMemory.tab = t;
+    setTab(t);
+  };
+  const hasRepertory = (reps.data?.repertories.length ?? 0) > 0;
+  return (
+    <section className="wide">
+      <h1>Symptom search</h1>
+      <div className="tabs" role="tablist">
+        <button type="button" role="tab" aria-selected={tab === "repertory"} onClick={() => choose("repertory")}>
+          Repertory
+        </button>
+        <button type="button" role="tab" aria-selected={tab === "books"} onClick={() => choose("books")}>
+          Book passages
+        </button>
+      </div>
+      {tab === "repertory" ? (
+        reps.data && !hasRepertory ? (
+          <p className="muted">No repertory is loaded yet. See README.md for how to import one.</p>
+        ) : (
+          <RepertoryCase repertories={reps.data?.repertories ?? []} />
+        )
+      ) : (
+        <BookSymptoms />
+      )}
+    </section>
+  );
+}
+
+const GRADE_LABEL = ["", "grade 1", "grade 2", "grade 3", "grade 4"];
+
+function RubricRemedies({ id }: { id: number }) {
+  const { data, loading, error } = useFetch<RubricDetail>(`/api/rubrics/${id}`);
+  if (!data) return <Status loading={loading} error={error} />;
+  return (
+    <p className="rubric-remedies">
+      {data.remedies.map((r, i) => (
+        <span key={r.id} className={`g${r.grade}`} title={`${r.name}, ${GRADE_LABEL[r.grade]}`}>
+          {r.abbrev}
+          {i < data.remedies.length - 1 ? ", " : ""}
+        </span>
+      ))}
+    </p>
+  );
+}
+
+function RepertoryCase({ repertories }: { repertories: Repertory[] }) {
+  const [rubrics, setRubricsState] = useState<Rubric[]>(caseMemory.rubrics);
+  const [method, setMethodState] = useState(caseMemory.method);
+  const [draft, setDraft] = useState("");
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState<number | null>(null);
+  const [result, setResult] = useState<{ data?: RepertorizeResponse; error?: string; loading: boolean }>({ loading: false });
+  const setRubrics = (next: Rubric[]) => {
+    caseMemory.rubrics = next;
+    setRubricsState(next);
+  };
+  const setMethod = (m: typeof method) => {
+    caseMemory.method = m;
+    setMethodState(m);
+  };
+  const found = useFetch<{ rubrics: Rubric[] }>(query ? `/api/rubrics?${new URLSearchParams({ q: query, limit: "40" })}` : null);
+  const ids = rubrics.map((r) => r.id);
+  const key = `${ids.join(",")}|${method}`;
+
+  useEffect(() => {
+    if (!ids.length) return setResult({ loading: false });
+    let live = true;
+    setResult((r) => ({ ...r, loading: true, error: undefined }));
+    post<RepertorizeResponse>("/api/repertorize", { rubrics: ids, method })
+      .then((data) => live && setResult({ data, loading: false }))
+      .catch((e: Error) => live && setResult({ error: e.message, loading: false }));
+    return () => {
+      live = false;
+    };
+  }, [key]);
+
+  const add = (r: Rubric) => !ids.includes(r.id) && setRubrics([...rubrics, r]);
+  const remove = (id: number) => setRubrics(rubrics.filter((r) => r.id !== id));
+  const data = result.data;
+  const shown = data?.remedies.slice(0, 30) ?? [];
+
+  return (
+    <>
+      <p className="muted">
+        Find the rubric for each symptom and add it to the case. Remedies are ranked by how many of the chosen rubrics list
+        them, then by their grades (1 to 3). Rubrics come from{" "}
+        {repertories.map((r) => r.title).join(", ") || "the repertory"}. This shows what the repertory lists. It is not
+        evidence that a remedy works and it is not a prescription.
+      </p>
+      <form
+        className="search"
+        role="search"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setQuery(draft.trim());
+        }}
+      >
+        <label htmlFor="rubric-q" className="visually-hidden">
+          Find a rubric
+        </label>
+        <input
+          id="rubric-q"
+          type="search"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Find a rubric, e.g. anxiety night, or restless* (a * matches word endings)"
+        />
+        <button type="submit">Find</button>
+      </form>
+
+      {query && (
+        <div className="rubric-results">
+          <Status loading={found.loading} error={found.error} />
+          {found.data && found.data.rubrics.length === 0 && <p className="muted">No rubric contains all of those words.</p>}
+          <ul className="rubric-list">
+            {found.data?.rubrics.map((r) => {
+              const inCase = ids.includes(r.id);
+              return (
+                <li key={r.id}>
+                  <div className="rubric-row">
+                    <button type="button" className="link" aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)}>
+                      {r.path}
+                    </button>
+                    <span className="muted count">{r.remedy_count}</span>
+                    <button type="button" className={`collect${inCase ? " on" : ""}`} disabled={inCase} onClick={() => add(r)}>
+                      {inCase ? "Added ✓" : "Add"}
+                    </button>
+                  </div>
+                  {open === r.id && <RubricRemedies id={r.id} />}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      <h2 className="case-head">
+        Case <span className="muted">· {rubrics.length} rubric{rubrics.length === 1 ? "" : "s"}</span>
+        {rubrics.length > 0 && (
+          <button type="button" className="secondary" onClick={() => setRubrics([])}>
+            Clear case
+          </button>
+        )}
+      </h2>
+      {rubrics.length === 0 ? (
+        <p className="muted">No rubrics yet. Find one above and press Add.</p>
+      ) : (
+        <>
+          <div className="controls">
+            <label htmlFor="method">Rank by</label>
+            <select id="method" value={method} onChange={(e) => setMethod(e.target.value as typeof method)}>
+              <option value="symptoms">Rubrics covered, then grades</option>
+              <option value="grades">Total grade, then rubrics covered</option>
+            </select>
+            {data && (
+              <span className="muted">
+                {data.total} remed{data.total === 1 ? "y" : "ies"}
+                {data.total > shown.length ? `, top ${shown.length} shown` : ""}
+              </span>
+            )}
+          </div>
+          <Status loading={result.loading && !data} error={result.error} />
+          <div className="rep-wrap">
+            <table className="rep grid">
+              <thead>
+                <tr>
+                  <th className="rep-rubric">Rubric</th>
+                  {shown.map((m) => (
+                    <th key={m.id} className="rem" title={m.name}>
+                      <span>{m.abbrev}</span>
+                    </th>
+                  ))}
+                </tr>
+                <tr className="totals">
+                  <th className="rep-rubric muted">Rubrics covered / total grade</th>
+                  {shown.map((m) => (
+                    <th key={m.id}>
+                      <b>{m.covered}</b>
+                      {m.total}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(data?.rubrics ?? rubrics).map((r, row) => (
+                  <tr key={r.id}>
+                    <th className="rep-rubric" scope="row">
+                      <button type="button" className="remove" aria-label={`Remove ${r.path}`} onClick={() => remove(r.id)}>
+                        ×
+                      </button>
+                      {r.path}
+                      <small>{r.remedy_count}</small>
+                    </th>
+                    {shown.map((m) => (
+                      <td key={m.id} className="rep-cell">
+                        {m.grades[row] > 0 && <span className={`dot g${m.grades[row]}`} title={`${m.name}: ${GRADE_LABEL[m.grades[row]]}`} />}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="muted small">
+            Larger dots are higher grades. Columns are remedies, ranked left to right. Hover a dot or remedy for its full
+            name. Use the Book passages tab or Search to read what the books say about a remedy.
+          </p>
+        </>
+      )}
+    </>
+  );
+}
+
+function BookSymptoms() {
   const sources = useFetch<{ sources: Source[] }>("/api/sources");
   const all = sources.data?.sources ?? [];
   const [text, setText] = useState("");
@@ -383,8 +607,7 @@ function SymptomsPage() {
   const data = state.data;
 
   return (
-    <section>
-      <h1>Symptom search</h1>
+    <>
       <p className="muted">
         Type one symptom per line. Each line is searched like the Search page, and matching passages are grouped under the
         remedy heading they appear in. Remedies are listed by how many of your symptoms their passages mention. This shows
@@ -478,7 +701,7 @@ function SymptomsPage() {
           </p>
         </>
       )}
-    </section>
+    </>
   );
 }
 

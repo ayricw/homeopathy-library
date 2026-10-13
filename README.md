@@ -33,3 +33,22 @@ npm run smoke   # end-to-end checks with throwaway local data
 ## Adding another source
 
 Check the source's reuse terms first. Then copy a file in `library/sources/`, give it a new `id`, fill in every field you can verify (use `null` for anything unknown), and import it as above.
+
+## Adding the repertory (Repertorium Publicum)
+
+The Repertory tab on the Symptoms page needs a repertory in the database. Repertorium Publicum (an English repertory based on Kent's, GPL v3) comes from the OOREP project's database dump.
+
+1. Download `oorep.sql.gz` from https://github.com/nondeterministic/oorep (the file is in the repository root) and save it as `library/originals/oorep.sql.gz`. Like the books, it stays out of Git.
+2. Apply the database migrations, then load the repertory:
+
+```
+# local
+npm run db:migrate:local
+npm run import:repertory -- library/originals/oorep.sql.gz library/repertories/publicum.json --local
+
+# dev on Cloudflare
+npm run db:migrate:dev
+npm run import:repertory -- library/originals/oorep.sql.gz library/repertories/publicum.json --env dev
+```
+
+The import writes about 810,000 rows in a few dozen parts. If it stops partway, run the same command again: rows already loaded are skipped.

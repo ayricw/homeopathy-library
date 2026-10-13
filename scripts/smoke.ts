@@ -70,6 +70,12 @@ async function main() {
     shell: process.platform === "win32",
   });
   if (mig.status !== 0) throw new Error(`Migrations failed:\n${mig.stdout}${mig.stderr}`);
+  const rep = spawnSync(
+    npx,
+    ["tsx", "scripts/import-repertory.ts", fixture("sample-oorep.sql"), fixture("sample-repertory.json"), "--local", "--persist-to", STATE],
+    { encoding: "utf8", shell: process.platform === "win32" },
+  );
+  if (rep.status !== 0) throw new Error(`Repertory import failed:\n${rep.stdout}${rep.stderr}`);
 
   const server = spawn(npx, ["vite", "dev", "--port", String(PORT), "--strictPort"], {
     env: { ...process.env, LIBRARY_PERSIST: STATE },
@@ -198,6 +204,39 @@ async function checks() {
   check("symptom search respects the chosen books", sr.body?.total === 0, sr.body);
   sr = await sym([]);
   check("empty symptom search is harmless", sr.status === 200 && sr.body?.total === 0, sr);
+
+  // Repertory: rubric search, rubric detail, repertorisation
+  const reps = await api("/api/repertories");
+  check("repertory is listed with its rubric count", reps.body?.repertories?.[0]?.id === "testrep" && reps.body.repertories[0].rubric_count === 5, reps.body);
+  let rb = await api("/api/rubrics?q=anxiety");
+  check("rubric search finds rubrics, general ones first", rb.body?.rubrics?.map((r: { path: string }) => r.path).join("|") === "Mind, anxiety|Mind, anxiety, night", rb.body);
+  rb = await api(`/api/rubrics?q=${encodeURIComponent("NEAR( OR \"")}`);
+  check("FTS operators in rubric search do not break it", rb.status === 200, rb);
+  const anxiety = (await api("/api/rubrics?q=anxiety")).body.rubrics[0];
+  const detail = await api(`/api/rubrics/${anxiety.id}`);
+  check("rubric lists remedies by grade", detail.body?.remedies?.map((r: { abbrev: string; grade: number }) => `${r.abbrev}${r.grade}`).join(" ") === "Alph.3 Bet.1", detail.body);
+  const head = (await api("/api/rubrics?q=burning")).body.rubrics[0];
+  const sleep = (await api("/api/rubrics?q=restless")).body.rubrics[0];
+  const rz = (rubrics: number[], method?: string) =>
+    api("/api/repertorize", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rubrics, method }) });
+  let case1 = await rz([anxiety.id, head.id, sleep.id]);
+  check(
+    "repertorisation ranks remedies by rubrics covered",
+    case1.body?.remedies?.map((r: { abbrev: string; covered: number; total: number }) => `${r.abbrev}:${r.covered}/${r.total}`).join(" ") === "Bet.:3/6 Alph.:2/4 O'Rem.:1/1",
+    case1.body,
+  );
+  check("repertorisation returns grades per rubric", JSON.stringify(case1.body?.remedies?.[0]?.grades) === "[1,3,2]", case1.body);
+  case1 = await rz([anxiety.id, head.id, sleep.id], "grades");
+  check("repertorisation by total grade", case1.body?.remedies?.[0]?.abbrev === "Bet.", case1.body);
+  case1 = await rz(Array.from({ length: 41 }, (_, i) => i + 1));
+  check("too many rubrics is refused", case1.status === 400, case1);
+  const repAgain = spawnSync(
+    npx,
+    ["tsx", "scripts/import-repertory.ts", fixture("sample-oorep.sql"), fixture("sample-repertory.json"), "--local", "--persist-to", STATE],
+    { encoding: "utf8", shell: process.platform === "win32" },
+  );
+  const after = await api("/api/repertories");
+  check("re-importing the repertory changes nothing", repAgain.status === 0 && after.body?.repertories?.length === 1 && after.body.repertories[0].rubric_count === 5, after.body);
 
   // 4. Open a result with context and references
   s = await api(`/api/search?q=${encodeURIComponent('"throbbing headache"')}`);

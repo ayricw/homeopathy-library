@@ -170,3 +170,42 @@ button.secondary { background: transparent; color: var(--accent); border: 1px so
 .hits.h4 { background: var(--accent); color: var(--surface); }
 .none { color: var(--border); }
 @media (max-width: 560px) { .rep-remedy { min-width: 8.5rem; } }
+
+.tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border); margin: 0.5rem 0 1rem; font-family: system-ui, sans-serif; }
+.tabs button { background: transparent; color: var(--muted); border-radius: 8px 8px 0 0; border-bottom: 2px solid transparent; }
+.tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.rubric-results { margin: 0.75rem 0; }
+.rubric-list { list-style: none; padding: 0; margin: 0; font: 14px/1.4 system-ui, sans-serif; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.rubric-list li { padding: 0.45rem 0.7rem; border-bottom: 1px solid var(--border); }
+.rubric-list li:last-child { border-bottom: 0; }
+.rubric-row { display: flex; align-items: center; gap: 0.6rem; }
+.rubric-row .link { flex: 1; min-width: 0; text-align: left; }
+.rubric-row .count { font-variant-numeric: tabular-nums; font-size: 13px; }
+.rubric-row .collect { position: static; }
+button.link { background: none; border: 0; padding: 0; color: var(--text); cursor: pointer; font: inherit; }
+button.link:hover, button.link:focus-visible { color: var(--accent); text-decoration: underline; }
+.rubric-remedies { margin: 0.4rem 0 0.2rem; font: 14px/1.7 Georgia, serif; }
+.rubric-remedies .g3, .rubric-remedies .g4 { font-weight: 700; text-transform: uppercase; }
+.rubric-remedies .g2 { font-style: italic; }
+.case-head { display: flex; align-items: center; gap: 0.75rem; font-size: 1.2rem; margin: 1.5rem 0 0.5rem; }
+.case-head button { padding: 0.25rem 0.7rem; font-size: 13px; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; font: 14px system-ui, sans-serif; margin-bottom: 0.5rem; }
+.controls select { padding: 0.35rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.rep.grid { width: auto; }
+.rep.grid .rep-rubric { text-align: left; min-width: 14rem; max-width: 22rem; font-weight: 400; }
+.rep.grid tbody .rep-rubric small { display: inline; margin-left: 0.4rem; color: var(--muted); font-size: 12px; }
+.rep.grid th.rem { padding: 0.4rem 0.15rem; vertical-align: bottom; }
+.rep.grid th.rem span { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 12px; color: var(--text); white-space: nowrap; }
+.rep.grid .totals th { font-size: 11px; color: var(--muted); text-align: center; line-height: 1.2; padding: 0.25rem 0.15rem; font-weight: 400; }
+.rep.grid .totals b { display: block; color: var(--text); font-size: 12px; }
+.rep.grid .totals .rep-rubric { text-align: left; }
+.rep.grid .rep-cell { width: 1.6rem; padding: 0.3rem 0.1rem; }
+.dot { display: inline-block; border-radius: 50%; vertical-align: middle; background: var(--accent); }
+.dot.g1 { width: 6px; height: 6px; opacity: 0.55; }
+.dot.g2 { width: 10px; height: 10px; opacity: 0.8; }
+.dot.g3, .dot.g4 { width: 14px; height: 14px; }
+.remove { background: none; color: var(--muted); border: 0; padding: 0 0.4rem 0 0; font-size: 16px; line-height: 1; cursor: pointer; }
+.remove:hover, .remove:focus-visible { color: var(--danger); }
+@media (max-width: 560px) { .rep.grid .rep-rubric { min-width: 10rem; } }
+main:has(> .wide) { max-width: 72rem; }
+.rubric-list { max-height: 24rem; overflow-y: auto; }
