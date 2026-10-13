@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { reflow } from "../shared/text";
 import { ImportPage } from "./ImportPage";
+import { excerpt, formatReferences, groupBySource, isCollected, useCollected, type CollectedItem } from "./collect";
 import { get, type PassageRef, type PassageResponse, type SearchResponse, type Source, type SourceDetail } from "./api";
 
 // ---------- tiny hash router: #/search?q=..  #/passage/12  #/sources  #/sources/id ----------
@@ -45,6 +46,7 @@ function useFetch<T>(path: string | null) {
 
 export function App() {
   const { path, params } = useRoute();
+  const collected = useCollected();
   const config = useFetch<{ environment: string; allowImports: boolean }>("/api/config");
   let page: ReactNode;
   let m: RegExpMatchArray | null;
@@ -52,6 +54,7 @@ export function App() {
   else if ((m = path.match(/^\/sources\/([\w-]+)$/))) page = <SourcePage id={m[1]} />;
   else if (path === "/sources") page = <SourcesPage />;
   else if (path === "/import") page = <ImportPage />;
+  else if (path === "/collected") page = <CollectedPage />;
   else page = <SearchPage params={params} />;
 
   return (
@@ -63,6 +66,7 @@ export function App() {
         <nav>
           <a href="#/search">Search</a>
           <a href="#/sources">Sources</a>
+          <a href="#/collected">Collected{collected.items.length > 0 && ` (${collected.items.length})`}</a>
           {config.data?.allowImports && <a href="#/import">Import</a>}
         </nav>
       </header>
@@ -104,6 +108,31 @@ function refLine(p: PassageRef) {
 
 function citation(s: Pick<Source, "title" | "author" | "edition" | "publication_year">) {
   return [s.author, s.edition, s.publication_year].filter(Boolean).join(", ");
+}
+
+function itemFrom(p: PassageRef, s: Pick<Source, "title" | "author" | "edition" | "publication_year">, sourceId: string, text: string): CollectedItem {
+  return {
+    passageId: p.id,
+    sourceId,
+    title: s.title,
+    author: s.author,
+    edition: s.edition,
+    publicationYear: s.publication_year,
+    heading: p.section ?? p.chapter,
+    location: [pages(p), `lines ${p.line_start}–${p.line_end}`].filter(Boolean).join(", "),
+    excerpt: excerpt(text),
+    addedAt: new Date().toISOString(),
+  };
+}
+
+function CollectButton({ item }: { item: CollectedItem }) {
+  const { items, toggle } = useCollected();
+  const on = isCollected(items, item.passageId);
+  return (
+    <button type="button" className={`collect${on ? " on" : ""}`} aria-pressed={on} onClick={() => toggle(item)}>
+      {on ? "Collected ✓" : "Collect"}
+    </button>
+  );
 }
 
 // ---------- search ----------
@@ -186,7 +215,8 @@ function SearchPage({ params }: { params: URLSearchParams }) {
           </p>
           <ol className="results">
             {results.data.results.map((r) => (
-              <li key={r.id}>
+              <li key={r.id} className="result">
+                <CollectButton item={itemFrom(r, r, r.source_id, r.snippet)} />
                 <a href={`#/passage/${r.id}?q=${encodeURIComponent(q)}`}>
                   <div className="ref">
                     <strong>{r.section ?? r.chapter ?? "Untitled section"}</strong>
@@ -273,6 +303,7 @@ function PassagePage({ id, q }: { id: string; q: string }) {
           <a href={`/api/sources/${s.id}/original`} target="_blank" rel="noopener">
             Original file
           </a>
+          <CollectButton item={itemFrom(p, s, s.id, reflow(p.text))} />
           <label>
             <input type="checkbox" checked={exact} onChange={(e) => setExact(e.target.checked)} /> Show exact original line breaks
           </label>
@@ -316,6 +347,87 @@ function Context({ p, q, current, children }: { p: PassageRef; q: string; curren
         {changed ? refLine(p) : [pages(p), `lines ${p.line_start}–${p.line_end}`].filter(Boolean).join(" · ")}
       </a>
       {children}
+    </section>
+  );
+}
+
+// ---------- collect tray ----------
+
+function CollectedPage() {
+  const { items, remove, clear } = useCollected();
+  const [copied, setCopied] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const copy = () =>
+    navigator.clipboard
+      .writeText(formatReferences(items))
+      .then(() => setCopied("References copied."))
+      .catch(() => setCopied("Copying is blocked in this browser. Select the references below instead."));
+
+  return (
+    <section>
+      <h1>Collected passages</h1>
+      <p className="muted">
+        Passages you pin with Collect while researching. They are saved only in this browser on this device and are never
+        sent to the server. Do not use this tray for anything about a patient.
+      </p>
+      {items.length === 0 ? (
+        <p className="muted">Nothing collected yet. Use Collect on a search result or a passage to pin it here.</p>
+      ) : (
+        <>
+          <div className="tray-actions">
+            <button type="button" onClick={copy}>
+              Copy references
+            </button>
+            {confirming ? (
+              <>
+                <span className="muted">Remove all {items.length}?</span>
+                <button type="button" className="secondary" onClick={() => {
+                    clear();
+                    setConfirming(false);
+                  }}>
+                  Yes, clear
+                </button>
+                <button type="button" className="secondary" onClick={() => setConfirming(false)}>
+                  Keep
+                </button>
+              </>
+            ) : (
+              <button type="button" className="secondary" onClick={() => setConfirming(true)}>
+                Clear all
+              </button>
+            )}
+            {copied && <span className="muted" role="status">{copied}</span>}
+          </div>
+          {groupBySource(items).map((g) => (
+            <div key={g.sourceId} className="tray-group">
+              <h2>
+                <a href={`#/sources/${g.sourceId}`}>{g.items[0].title}</a>
+                <span className="source-line"> · {citation({ ...g.items[0], publication_year: g.items[0].publicationYear })}</span>
+              </h2>
+              <ol className="results">
+                {g.items.map((i) => (
+                  <li key={i.passageId} className="result">
+                    <button type="button" className="collect on" onClick={() => remove(i.passageId)}>
+                      Remove
+                    </button>
+                    <a href={`#/passage/${i.passageId}`}>
+                      <div className="ref">
+                        <strong>{i.heading ?? "Untitled section"}</strong>
+                        <span>{i.location}</span>
+                      </div>
+                      <p className="snippet">{i.excerpt}</p>
+                    </a>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ))}
+          <details className="tray-refs">
+            <summary>References as text</summary>
+            <pre>{formatReferences(items)}</pre>
+          </details>
+        </>
+      )}
     </section>
   );
 }

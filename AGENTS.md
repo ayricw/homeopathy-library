@@ -38,7 +38,7 @@ Check the current official Cloudflare and Anthropic documentation before choosin
 - `worker/access.ts`: Cloudflare Access token and email allow-list check.
 - `scripts/smoke.ts`: end-to-end checks against a local Worker. `scripts/check-deployed.ts`: checks a deployed environment (Access blocks anonymous requests; D1, R2 and FTS consistency).
 - `library/sources/*.json`: metadata for each source. `library/originals/`: book files (ignored by Git).
-- `src/`: the React UI.
+- `src/`: the React UI. `src/collect.ts` is the collect tray: pinned passages kept in the browser's localStorage only, with references and short excerpts and no free-text notes, so no patient information can be stored.
 
 ## Library and ingestion rules
 
