@@ -119,3 +119,23 @@ pre { white-space: pre-wrap; font: 14px/1.5 ui-monospace, Consolas, monospace; }
 }
 .import button { justify-self: start; }
 progress { width: min(20rem, 60%); vertical-align: middle; }
+
+.result { position: relative; }
+.result > a { padding-right: 7.5rem; }
+.collect {
+  position: absolute; top: 0.6rem; right: 0.6rem; z-index: 1;
+  padding: 0.3rem 0.65rem; font-size: 13px; border-radius: 99px;
+  background: var(--surface); color: var(--accent); border: 1px solid var(--accent);
+}
+.collect.on { background: var(--accent); color: var(--surface); }
+.links .collect { position: static; }
+button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--border); }
+.tray-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin: 1rem 0; font-family: system-ui, sans-serif; }
+.tray-group h2 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; }
+.tray-refs { margin: 1.5rem 0; font-family: system-ui, sans-serif; }
+@media (max-width: 560px) {
+  .result > a { padding-right: 1rem; padding-top: 2.6rem; }
+}
+.top { flex-wrap: wrap; }
+.top nav { flex-wrap: wrap; gap: 0.25rem 1rem; }
+.top nav a { white-space: nowrap; }
