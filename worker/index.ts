@@ -1,4 +1,5 @@
 import { buildMatchQuery } from "../shared/query";
+import { MAX_SYMPTOMS, parseSymptoms, rankRemedies, type HeadingHits } from "../shared/symptoms";
 import { checkAccess, type AccessConfig } from "./access";
 import { decodeUtf8, sha256Hex, type Issue, type Passage } from "../shared/text";
 
@@ -72,6 +73,7 @@ async function route(request: Request, url: URL, env: Env): Promise<Response> {
   if (method === "GET" && (m = path.match(/^\/api\/sources\/([\w-]+)$/))) return getSource(env, m[1]);
   if (method === "GET" && (m = path.match(/^\/api\/sources\/([\w-]+)\/original$/))) return getOriginal(env, m[1]);
   if (method === "GET" && path === "/api/search") return search(env, url.searchParams);
+  if (method === "POST" && path === "/api/symptoms") return symptomSearch(request, env);
   if (method === "GET" && (m = path.match(/^\/api\/passages\/(\d+)$/))) return getPassage(env, Number(m[1]), url.searchParams);
 
   if (path.startsWith("/api/imports")) {
@@ -180,6 +182,35 @@ async function search(env: Env, params: URLSearchParams) {
     offset,
     results: rows.results,
   });
+}
+
+// ---------- Symptom search ----------
+// POST so the symptoms stay out of URLs, browser history and request logs. Nothing is stored.
+
+async function symptomSearch(request: Request, env: Env) {
+  const body = (await request.json().catch(() => null)) as { symptoms?: unknown; sources?: unknown } | null;
+  const input = Array.isArray(body?.symptoms) ? body.symptoms.filter((s): s is string => typeof s === "string") : [];
+  const sources = Array.isArray(body?.sources) ? body.sources.filter((s): s is string => typeof s === "string").slice(0, 50) : [];
+  if (input.length > MAX_SYMPTOMS * 2) throw new HttpError(400, `Enter at most ${MAX_SYMPTOMS} symptoms.`);
+  const { symptoms, skipped } = parseSymptoms(input);
+  if (!symptoms.length) return json({ symptoms: [], skipped, remedies: [], total: 0 });
+
+  const sourceFilter = sources.length ? ` AND p.source_id IN (${sources.map(() => "?").join(", ")})` : "";
+  const statements = symptoms.map((s, i) =>
+    env.DB.prepare(
+      `SELECT ? AS symptom, p.source_id, COALESCE(p.section, p.chapter) AS heading,
+         COUNT(*) AS hits, MIN(p.id) AS first_passage
+       FROM passages_fts JOIN passages p ON p.id = passages_fts.rowid
+       WHERE passages_fts MATCH ?${sourceFilter} AND COALESCE(p.section, p.chapter) IS NOT NULL
+       GROUP BY p.source_id, heading`,
+    ).bind(i, s.match, ...sources),
+  );
+  const results = await env.DB.batch<HeadingHits>(statements);
+  const ranked = rankRemedies(
+    symptoms.length,
+    results.flatMap((r) => r.results),
+  );
+  return json({ symptoms: symptoms.map((s) => s.label), skipped, ...ranked });
 }
 
 // ---------- Passage with context ----------

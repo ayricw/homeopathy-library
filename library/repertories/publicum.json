@@ -1,0 +1,14 @@
+{
+  "id": "publicum",
+  "oorep_abbrev": "publicum",
+  "title": "Repertorium Publicum",
+  "author": "Vladimir Polony (compiler), based on J. T. Kent's Repertory of the Homoeopathic Materia Medica",
+  "edition": "0.5",
+  "publication_year": 2008,
+  "publisher": "Vladimir Polony, Banska Bystrica, Slovakia",
+  "language": "en",
+  "source_url": "https://github.com/nondeterministic/oorep",
+  "attribution": "Repertorium Publicum by Vladimir Polony (2008), derived from Kent's Repertory, as distributed in the OOREP database dump (oorep.sql.gz) by Andreas Bauer.",
+  "reuse_terms": "GPL v3, as stated in the OOREP dump's info table (\"GPL v3 - as part of the OpenRep source code\") and on https://www.oorep.com/faq. Used privately; GPL conditions apply if the data is ever redistributed.",
+  "notes": "Grades are OOREP's weights 1 to 3. The OOREP dump also contains kent-de (German); only publicum is used."
+}

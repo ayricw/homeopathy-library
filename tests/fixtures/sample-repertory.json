@@ -1,0 +1,14 @@
+{
+  "id": "testrep",
+  "oorep_abbrev": "testrep",
+  "title": "Test Repertory",
+  "author": "T. Tester",
+  "edition": null,
+  "publication_year": null,
+  "publisher": null,
+  "language": "en",
+  "source_url": "https://example.org/repertory",
+  "attribution": "Synthetic test data",
+  "reuse_terms": "Test data, no restrictions",
+  "notes": null
+}
