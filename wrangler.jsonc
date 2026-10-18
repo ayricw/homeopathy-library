@@ -51,7 +51,7 @@
         {
           "binding": "CLIENTS",
           "database_name": "homeopathy-library-dev-clients",
-          "database_id": "REPLACE_WITH_DEV_CLIENTS_DATABASE_ID",
+          "database_id": "c3879e64-2f4b-48f2-a508-e559b6ab5b0a",
           "migrations_dir": "migrations-clients"
         }
       ],
