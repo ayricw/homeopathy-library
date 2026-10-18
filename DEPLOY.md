@@ -72,3 +72,71 @@ Then open the URL, sign in with the emailed code, and go to **Import**. Choose `
 - **Search:** `cough` returns highlighted results. `"burning pain"` matches only that exact phrase. `rheumat*` matches word prefixes.
 - **Filters:** the source and author filters narrow the results. Edition shows "No editions recorded" because the edition is unknown.
 - **References:** opening a result shows the remedy heading, line numbers, "This file has no page numbers" and the surrounding passages. "Source page" opens the Gutenberg page, and "Original file" shows the untouched text.
+
+## Client records in dev (made-up clients only)
+
+Client records need their own database. Until it exists, `npm run deploy:dev` fails, because `wrangler.jsonc` names it.
+
+```powershell
+npx wrangler d1 create homeopathy-library-dev-clients
+#   copy the printed database_id into wrangler.jsonc -> env.dev -> d1_databases[1].database_id
+npm run db:migrate:clients:dev
+```
+
+Then set two secrets. The key only encrypts test clients in dev, so it doesn't need to be kept.
+
+```powershell
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))" | npx wrangler secret put CLIENT_KEY --env dev
+npx wrangler secret put CLIENT_EMAILS --env dev    # the email(s) allowed to see client records
+npm run deploy:dev
+```
+
+A **Clients** link then appears for those emails. Use made-up names only: the dev page says so.
+
+# Production (real client records)
+
+The production Worker is `homeopathy-library-prod`, served on its own workers.dev URL behind its own Access application. It uses only `homeopathy-library-prod-*` resources. Expected cost: $0 on the free plans.
+
+Look first (read-only), then create:
+
+```powershell
+npx wrangler d1 list
+npx wrangler r2 bucket list
+npx wrangler d1 create homeopathy-library-prod
+#   copy the database_id into wrangler.jsonc -> env.production -> d1_databases[0].database_id
+npx wrangler d1 create homeopathy-library-prod-clients
+#   copy the database_id into wrangler.jsonc -> env.production -> d1_databases[1].database_id
+npx wrangler r2 bucket create homeopathy-library-prod
+npm run db:migrate:prod
+npm run db:migrate:clients:prod
+npm run build:repertory -- library/originals/oorep.sql.gz library/repertories/publicum.json
+npm run deploy:prod
+```
+
+Turn on Access exactly as for dev (above), on `homeopathy-library-prod`, with a new policy named `homeopathy-library-prod-allow`. Then set the secrets:
+
+```powershell
+npx wrangler secret put TEAM_DOMAIN --env production
+npx wrangler secret put POLICY_AUD --env production       # the prod application's AUD tag
+npx wrangler secret put ALLOWED_EMAILS --env production
+npx wrangler secret put CLIENT_EMAILS --env production    # suggested: Robyn's email only
+```
+
+### The client records key
+
+Every client name and note is encrypted with this key. **If it is lost, the records cannot be read by anyone, including you.** Generate it, save it in your password manager, then store it in Cloudflare:
+
+```powershell
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+#   save the printed value in your password manager first
+npx wrangler secret put CLIENT_KEY --env production       # paste the same value
+```
+
+Never paste it into chat, Git or a file in this folder.
+
+### Production checklist
+
+- A private window that isn't signed in sees the Cloudflare sign-in page.
+- An allowed email that isn't in `CLIENT_EMAILS` sees no **Clients** link, and `/api/clients` answers 403.
+- Robyn can add a test client, start a visit, add rubrics, write a note, reload and see it saved, download the record, and delete the client.
+- Backups: D1 Time Travel can restore the clients database to any point in the last 7 days (`npx wrangler d1 time-travel info homeopathy-library-prod-clients --env production`).

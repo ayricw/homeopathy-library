@@ -1,21 +1,17 @@
 import { buildMatchQuery } from "../shared/query";
 import { MAX_SYMPTOMS, parseSymptoms, rankRemedies, type HeadingHits } from "../shared/symptoms";
 import { checkAccess, type AccessConfig } from "./access";
+import { clientsAllowed, routeClients, type ClientsEnv } from "./clients";
+import { HttpError, json } from "./http";
 import { decodeUtf8, sha256Hex, type Issue, type Passage } from "../shared/text";
 
-export interface Env extends AccessConfig {
+export interface Env extends AccessConfig, ClientsEnv {
   DB: D1Database;
   LIBRARY: R2Bucket;
   ASSETS: Fetcher;
   ENVIRONMENT: string;
   ALLOW_IMPORTS: string;
 }
-
-const json = (data: unknown, status = 200) =>
-  new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
-  });
 
 function withSecurityHeaders(res: Response) {
   const out = new Response(res.body, res);
@@ -26,19 +22,15 @@ function withSecurityHeaders(res: Response) {
   return out;
 }
 
-class HttpError extends Error {
-  constructor(public status: number, message: string) {
-    super(message);
-  }
-}
-
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     // Every path (pages, API, original files) requires Access outside local development.
     // "local" skips Access only on this machine, so a mistaken deploy of the local config stays locked.
     const isLocalHost = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-    if (env.ENVIRONMENT !== "local" || !isLocalHost) {
+    const local = env.ENVIRONMENT === "local" && isLocalHost;
+    let email: string | null = null;
+    if (!local) {
       const access = await checkAccess(request, env);
       if (!access.ok) {
         return new Response(`${access.reason}\n`, {
@@ -46,6 +38,7 @@ export default {
           headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
         });
       }
+      email = access.email;
     }
     if (!url.pathname.startsWith("/api/")) return withSecurityHeaders(await env.ASSETS.fetch(request));
     try {
@@ -54,7 +47,9 @@ export default {
         const origin = request.headers.get("origin");
         if (origin && origin !== url.origin) throw new HttpError(403, "Cross-site request refused");
       }
-      return await route(request, url, env);
+      const clients = await routeClients(request, url, env, { local, email });
+      if (clients) return clients;
+      return await route(request, url, env, { local, email });
     } catch (err) {
       if (err instanceof HttpError) return json({ error: err.message }, err.status);
       console.error("Unhandled error", err instanceof Error ? err.message : err);
@@ -63,12 +58,14 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
-async function route(request: Request, url: URL, env: Env): Promise<Response> {
+async function route(request: Request, url: URL, env: Env, who: { local: boolean; email: string | null }): Promise<Response> {
   const path = url.pathname.replace(/\/+$/, "");
   const method = request.method;
   let m: RegExpMatchArray | null;
 
-  if (method === "GET" && path === "/api/config") return json({ environment: env.ENVIRONMENT, allowImports: env.ALLOW_IMPORTS === "true" });
+  if (method === "GET" && path === "/api/config") {
+    return json({ environment: env.ENVIRONMENT, allowImports: env.ALLOW_IMPORTS === "true", clients: clientsAllowed(env, who) });
+  }
   if (method === "GET" && path === "/api/sources") return listSources(env);
   if (method === "GET" && (m = path.match(/^\/api\/sources\/([\w-]+)$/))) return getSource(env, m[1]);
   if (method === "GET" && (m = path.match(/^\/api\/sources\/([\w-]+)\/original$/))) return getOriginal(env, m[1]);

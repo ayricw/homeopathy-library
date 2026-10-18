@@ -4,7 +4,7 @@ Instructions for anyone (human or AI agent) working in this repository.
 
 ## What this is
 
-A private, searchable reference library of homeopathy books and resources for a practitioner in Texas. Users search conditions, symptoms, remedies and treatment discussions, read the original passages, and compare what sources say. **The app never stores patient information.**
+A private, searchable reference library of homeopathy books and resources for a practitioner in Texas. Users search conditions, symptoms, remedies and treatment discussions, read the original passages, and compare what sources say. The practitioner can also keep client records (owner's decision, 2026-10-18): see "Client records" below. **Outside the clients database, the app never stores patient information.**
 
 ## Project separation (hard rules)
 
@@ -25,6 +25,7 @@ A private, searchable reference library of homeopathy books and resources for a 
 | Original files and extracted text | R2: `originals/<sha256>/<filename>`, `extracted/<sha256>.txt`. |
 | Semantic search (later) | Vectorize, added only after keyword search is in use. |
 | Answers (later) | Claude API, called from the Worker only, grounded in retrieved passages. |
+| Client records | A separate D1 database (`CLIENTS`, `homeopathy-library-<env>-clients`, migrations in `migrations-clients/`). Names and visit contents are encrypted in the Worker with AES-GCM (key in the `CLIENT_KEY` secret, each value bound to its record) before they are stored. Only the emails in `CLIENT_EMAILS` can use it. Separate so client data can be exported, restored or deleted without touching the library. |
 | Access | Cloudflare Access on the Worker's workers.dev URL, plus a fail-closed JWT and email check in the Worker on every path (`worker/access.ts`). Preview URLs are disabled. See `DEPLOY.md`. |
 
 Check the current official Cloudflare and Anthropic documentation before choosing integration details, and record any architecture change here with the reason.
@@ -41,6 +42,7 @@ Check the current official Cloudflare and Anthropic documentation before choosin
 - `migrations/`: D1 schema. Add new numbered files; never edit an applied migration.
 - `shared/importer.ts`: the import procedure, used by `scripts/import.ts` (CLI, local) and the Import page (browser, deployed dev).
 - `worker/access.ts`: Cloudflare Access token and email allow-list check.
+- `shared/clients.ts`: client record encryption (seal/open) and validation. `worker/clients.ts`: the `/api/clients` and `/api/visits` API. `src/ClientsPages.tsx`: client list, client page and visit page (the repertory case plus notes and remedy chosen, saved automatically).
 - `scripts/smoke.ts`: end-to-end checks against a local Worker. `scripts/check-deployed.ts`: checks a deployed environment (Access blocks anonymous requests; D1, R2 and FTS consistency).
 - `library/sources/*.json`: metadata for each source. `library/originals/`: book files (ignored by Git).
 - `src/`: the React UI. `src/collect.ts` is the collect tray: pinned passages kept in the browser's localStorage only, with references and short excerpts and no free-text notes, so no patient information can be stored.
@@ -69,6 +71,18 @@ Check the current official Cloudflare and Anthropic documentation before choosin
   - Say so when the library does not support an answer.
   - Never give patient-specific diagnoses, prescriptions, dosage instructions or treatment plans, and never present historical claims as proven treatments.
 
+## Client records
+
+Added at the owner's request on 2026-10-18 (plan approved in the project: `plans/client-records-plan.md`).
+
+- Client data lives only in the `CLIENTS` database. Never put client names, symptoms or notes in D1's library database, R2, URLs (pages use random ids), browser storage, logs, error messages or Git.
+- Names and visit contents are encrypted before they are stored. Only ids and visit dates are in the clear. Losing `CLIENT_KEY` makes the records unreadable, so the owner keeps a copy in a password manager.
+- Only the emails in `CLIENT_EMAILS` can use the client API, on top of the Access check. It fails closed if the database, key or email list is missing.
+- Real clients only in production. Dev and local show a "made-up test clients only" warning. Local testing uses a built-in local-only key.
+- What is stored: the name (initials are fine), visit dates, the rubric paths in each visit's case, the ranking method, the practitioner's notes and the remedy chosen. No dates of birth, contact or insurance details.
+- Client data is never sent to Claude or any other service.
+- The practitioner can download a client's record (JSON) and permanently delete a client or a visit.
+
 ## Checks
 
 Run before every commit:
@@ -86,4 +100,4 @@ npm run smoke     # end-to-end: import, duplicate, resume, search, references (t
 4. **PDF and OCR:** extraction with page numbers from the PDF itself, and confidence recorded for OCR text.
 5. **Semantic search:** Vectorize index `homeopathy-library-dev-passages` alongside keyword search.
 6. **Grounded answers:** a Claude call in the Worker over retrieved passages, with citations and the answer rules above.
-7. **Production:** the `env.production` resources, imports disabled (`ALLOW_IMPORTS=false`), and the same Access policy.
+7. **Production:** the `env.production` resources, imports disabled (`ALLOW_IMPORTS=false`), and the same Access policy. Needed before real client records are entered. Open question: how to copy the book library into production while imports are disabled.

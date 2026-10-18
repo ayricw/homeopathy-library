@@ -6,6 +6,7 @@
     "dev": "vite dev",
     "build": "vite build",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:clients:local": "wrangler d1 migrations apply CLIENTS --local",
     "import": "tsx scripts/import.ts",
     "test": "vitest run",
     "typecheck": "tsc",
@@ -13,8 +14,12 @@
     "check": "npm run typecheck && npm test",
     "deploy:dev": "cross-env CLOUDFLARE_ENV=dev vite build && wrangler deploy",
     "db:migrate:dev": "wrangler d1 migrations apply DB --env dev --remote",
+    "db:migrate:clients:dev": "wrangler d1 migrations apply CLIENTS --env dev --remote",
     "check:deployed": "tsx scripts/check-deployed.ts",
-    "build:repertory": "tsx scripts/build-repertory.ts"
+    "build:repertory": "tsx scripts/build-repertory.ts",
+    "deploy:prod": "cross-env CLOUDFLARE_ENV=production vite build && wrangler deploy",
+    "db:migrate:prod": "wrangler d1 migrations apply DB --env production --remote",
+    "db:migrate:clients:prod": "wrangler d1 migrations apply CLIENTS --env production --remote"
   },
   "license": "UNLICENSED",
   "devDependencies": {
