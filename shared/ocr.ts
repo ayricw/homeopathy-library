@@ -114,10 +114,14 @@ export function buildScanText(searchtext: string, pageindex: unknown, pageNumber
 function readPages(raw: unknown): ScanPage[] {
   const pages = (raw as { pages?: unknown })?.pages;
   if (!Array.isArray(pages)) throw new Error("The page-number file has no list of pages.");
+  // Leaves are numbered consecutively, from 0 or 1 depending on the scan.
   return pages.map((p, i) => {
     const leafNum = (p as ScanPage)?.leafNum;
     const pageNumber = (p as ScanPage)?.pageNumber;
-    if (leafNum !== i + 1 || typeof pageNumber !== "string") throw new Error(`The page-number file's entry ${i + 1} is not in leaf order.`);
+    const first = (pages[0] as ScanPage)?.leafNum;
+    if (!Number.isInteger(first) || leafNum !== first + i || typeof pageNumber !== "string") {
+      throw new Error(`The page-number file's entry ${i + 1} is not in leaf order.`);
+    }
     return { leafNum, pageNumber };
   });
 }

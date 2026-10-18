@@ -55,8 +55,8 @@ async function download(archiveId: string, key: FileKey) {
       const bytes = new Uint8Array(await res.arrayBuffer());
       return { name, url, bytes, sha256: createHash("sha256").update(bytes).digest("hex") };
     } catch (err) {
-      if (attempt >= 4) throw err;
-      await new Promise((r) => setTimeout(r, 2000 * 2 ** attempt));
+      if (attempt >= 6) throw err;
+      await new Promise((r) => setTimeout(r, Math.min(2000 * 2 ** attempt, 30000)));
     }
   }
 }

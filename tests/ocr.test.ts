@@ -66,6 +66,9 @@ describe("buildScanText", () => {
 
   it("refuses files whose leaves do not line up", () => {
     expect(() => buildScanText(searchtext, pageindex.slice(1), pageNumbers)).toThrow(/cannot be matched/);
-    expect(() => buildScanText(searchtext, pageindex, { pages: [{ leafNum: 2, pageNumber: "" }] })).toThrow();
+    const shifted = { pages: pageNumbers.pages.map((p) => ({ ...p, leafNum: p.leafNum - 1 })) };
+    expect(buildScanText(searchtext, pageindex, shifted).text).toBe(scan.text);
+    const gap = { pages: pageNumbers.pages.map((p, i) => ({ ...p, leafNum: i < 3 ? i + 1 : i + 2 })) };
+    expect(() => buildScanText(searchtext, pageindex, gap)).toThrow(/leaf order/);
   });
 });
