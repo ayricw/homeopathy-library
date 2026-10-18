@@ -124,3 +124,82 @@ export function repertorize(data: RepertoryFile, rubricIds: number[], method: Ra
   );
   return ranked;
 }
+
+/** One level of a rubric path ("Ear" > "pain" > "burning"). */
+export interface RubricNode {
+  label: string;
+  path: string;
+  /** Rubric id, or null for a level the repertory lists no remedies under directly. */
+  id: number | null;
+  remedyCount: number;
+  parent: number | null;
+  children: number[];
+}
+
+export interface RubricTree {
+  nodes: RubricNode[];
+  /** Chapters, head to toe in Kent's order; any others follow A to Z. */
+  roots: number[];
+  byPath: Map<string, number>;
+}
+
+/** Kent's chapter order, which most repertories follow: head to toe, then the general sections. */
+const CHAPTER_ORDER = [
+  "Mind", "Vertigo", "Head", "Eye", "Vision", "Ear", "Hearing", "Nose", "Face", "Mouth", "Teeth", "Throat",
+  "External throat", "Appetite", "Stomach", "Abdomen", "Rectum", "Stool", "Bladder", "Kidneys", "Prostate gland",
+  "Urethra", "Urine", "Genitalia male", "Genitalia female", "Larynx and trachea", "Respiration", "Cough",
+  "Expectoration", "Chest", "Heart & Circulation", "Back", "Extremities", "Sleep", "Chill", "Fever", "Perspiration",
+  "Skin", "Blood", "Generalities", "Clinical",
+].map((c) => c.toLowerCase());
+
+/** Builds the chapter > rubric > sub-rubric tree from the comma-separated paths. Children are sorted A to Z. */
+export function buildTree(data: RepertoryFile): RubricTree {
+  const nodes: RubricNode[] = [];
+  const roots: number[] = [];
+  const byPath = new Map<string, number>();
+  const node = (parts: string[]): number => {
+    const path = parts.join(", ");
+    let n = byPath.get(path);
+    if (n !== undefined) return n;
+    const parent = parts.length > 1 ? node(parts.slice(0, -1)) : null;
+    n = nodes.push({ label: parts[parts.length - 1], path, id: null, remedyCount: 0, parent, children: [] }) - 1;
+    byPath.set(path, n);
+    if (parent === null) roots.push(n);
+    else nodes[parent].children.push(n);
+    return n;
+  };
+  data.rubrics.forEach(([path, entries], id) => {
+    const n = nodes[node(path.split(", "))];
+    // A repeated path keeps the first rubric; the other is still found by search.
+    if (n.id === null) {
+      n.id = id;
+      n.remedyCount = entries.length;
+    }
+  });
+  const cmp = (a: number, b: number) => nodes[a].label.localeCompare(nodes[b].label, undefined, { numeric: true, sensitivity: "base" });
+  for (const n of nodes) n.children.sort(cmp);
+  const rank = (n: number) => {
+    const i = CHAPTER_ORDER.indexOf(nodes[n].label.toLowerCase());
+    return i < 0 ? CHAPTER_ORDER.length : i;
+  };
+  roots.sort((a, b) => rank(a) - rank(b) || cmp(a, b));
+  return { nodes, roots, byPath };
+}
+
+/** The nodes from the chapter down to this one. */
+export function ancestry(tree: RubricTree, n: number): number[] {
+  const chain: number[] = [];
+  for (let at: number | null = n; at !== null; at = tree.nodes[at].parent) chain.unshift(at);
+  return chain;
+}
+
+/** Children whose label contains every typed word (accents and case ignored). */
+export function filterChildren(tree: RubricTree, n: number | null, input: string): number[] {
+  const list = n === null ? tree.roots : tree.nodes[n].children;
+  const want = words(input);
+  if (!want.length) return list;
+  return list.filter((c) => {
+    const have = words(tree.nodes[c].label);
+    return want.every((w) => have.some((h) => h.startsWith(w)));
+  });
+}
