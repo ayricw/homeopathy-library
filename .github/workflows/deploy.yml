@@ -1,0 +1,85 @@
+# Deploys the app from GitHub, so no deploy has to run on anyone's PC.
+#   - Every merge to main: checks, then deploys dev.
+#   - Production: only when someone presses "Run workflow" on the Actions tab and picks production.
+# Needs two repository secrets: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (see DEPLOY.md).
+# Touches only homeopathy-library-dev / homeopathy-library-prod resources, as named in wrangler.jsonc.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to deploy
+        type: choice
+        options: [dev, production]
+        default: dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ inputs.target || 'dev' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      TARGET: ${{ inputs.target || 'dev' }}
+      # The Repertorium Publicum data comes from this exact OOREP dump (see README). A changed dump fails
+      # here instead of silently changing rubrics; update the hash after checking the new file.
+      OOREP_URL: https://github.com/nondeterministic/oorep/raw/master/oorep.sql.gz
+      OOREP_SHA256: 0a20753505bd99e1942382f6fca7c6d9a29cd8fad0715ebbade64c1bbf11948e
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type check and unit tests
+        run: npm run check
+
+      - name: Check the Cloudflare secrets are set
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID as repository secrets (see DEPLOY.md)."
+            exit 1
+          fi
+
+      - name: Build the repertory file
+        run: |
+          mkdir -p library/originals
+          curl -fsSL -o library/originals/oorep.sql.gz "$OOREP_URL"
+          echo "$OOREP_SHA256  library/originals/oorep.sql.gz" | sha256sum -c -
+          npm run build:repertory -- library/originals/oorep.sql.gz library/repertories/publicum.json
+
+      - name: Apply database migrations
+        run: |
+          if [ "$TARGET" = production ]; then
+            npm run db:migrate:prod
+            npm run db:migrate:clients:prod
+          else
+            npm run db:migrate:dev
+            npm run db:migrate:clients:dev
+          fi
+
+      - name: Deploy
+        run: |
+          if [ "$TARGET" = production ]; then npm run deploy:prod; else npm run deploy:dev; fi
+
+      # Dev holds made-up test clients only, so its encryption key can be created here and need not be kept.
+      # Production's key is never created here: the owner creates it and keeps a copy (DEPLOY.md).
+      - name: Create the dev client key if it is missing
+        if: env.TARGET == 'dev'
+        run: |
+          if ! npx wrangler secret list --env dev | grep -q '"CLIENT_KEY"'; then
+            openssl rand -base64 32 | npx wrangler secret put CLIENT_KEY --env dev
+          fi

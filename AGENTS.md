@@ -95,7 +95,7 @@ npm run smoke     # end-to-end: import, duplicate, resume, search, references (t
 ## Implementation plan
 
 1. **Milestone 1 (done locally):** import a complete UTF-8 text file, show source metadata, keyword search with filters, and a passage view with context and chapter/page/line references.
-2. **Private dev deploy (in progress):** follow `DEPLOY.md`. Deploys run from the owner's PC because the cloud workspace cannot reach Cloudflare.
+2. **Private dev deploy (in progress):** follow `DEPLOY.md`. The cloud workspace cannot reach Cloudflare, so deploys run from GitHub Actions (`.github/workflows/deploy.yml`, owner's choice 2026-10-18): dev on every merge to `main`, production only by a manual run. Running them from the owner's PC still works.
 3. **Library growth:** more sources, a correction workflow, and comparison views across sources for the same remedy or symptom.
 4. **PDF and OCR:** extraction with page numbers from the PDF itself, and confidence recorded for OCR text.
 5. **Semantic search:** Vectorize index `homeopathy-library-dev-passages` alongside keyword search.

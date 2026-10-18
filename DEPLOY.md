@@ -4,6 +4,28 @@ This creates only `homeopathy-library-dev` resources. It never reads, changes or
 
 Expected cost: $0. This fits within Workers Free, D1 Free, R2's free tier (10 GB-month, 1M Class A and 10M Class B operations per month) and Zero Trust Free (up to 50 users). R2 and Zero Trust ask for a payment card even on their free plans.
 
+## Automatic deploys from GitHub
+
+`.github/workflows/deploy.yml` deploys without anyone's PC:
+
+- **Every merge to `main`:** type check and unit tests, then it builds the repertory file from the OOREP dump (checked against a fixed SHA-256), applies D1 migrations and deploys **dev**.
+- **Production:** only when someone opens **Actions → Deploy → Run workflow** on GitHub and picks `production`.
+
+### One-time setup (in the browser)
+
+1. **Create a Cloudflare API token.** In the Cloudflare dashboard, go to **My Profile → API Tokens → Create Token**, then choose **Create Custom Token**:
+   - Name: `homeopathy-library-github-deploy`
+   - Permissions: **Account → Workers Scripts → Edit**, **Account → D1 → Edit**, **Account → Workers R2 Storage → Read**, **Account → Account Settings → Read**
+   - Account Resources: **Include → (your account)**
+   - Create it and copy the token. It is shown only once.
+
+   Cloudflare tokens cover a whole account, not one app. This one could in principle change the other app's Workers in the same account. The workflow only names `homeopathy-library-*` resources, and the token lives only in this repository's secrets.
+2. **Find the account ID.** On the dashboard home page, open the account's menu (⋯) and choose **Copy account ID**. Workers & Pages also shows it on the right.
+3. **Add both to GitHub.** In the repository, go to **Settings → Secrets and variables → Actions → New repository secret**. Add `CLOUDFLARE_API_TOKEN` (the token) and `CLOUDFLARE_ACCOUNT_ID` (the ID).
+4. **Run it once.** Go to **Actions → Deploy → Run workflow**, pick `dev`, and press Run.
+
+To stop automatic deploys, delete either secret, or disable the workflow under **Actions → Deploy → ⋯**.
+
 ## How access is enforced
 
 1. **Cloudflare Access** on the Worker's `workers.dev` URL asks for sign-in before any request reaches the Worker. Preview URLs are disabled.
@@ -75,7 +97,16 @@ Then open the URL, sign in with the emailed code, and go to **Import**. Choose `
 
 ## Client records in dev (made-up clients only)
 
-Client records need their own database. Until it exists, `npm run deploy:dev` fails, because `wrangler.jsonc` names it.
+Client records need their own database. Until it exists, dev deploys fail, because `wrangler.jsonc` names it.
+
+**In the browser:**
+1. Go to **Storage & Databases → D1 → Create database**, name it `homeopathy-library-dev-clients`, and create it.
+2. Copy its **Database ID** into `wrangler.jsonc` → `env.dev` → `d1_databases[1].database_id`. A database ID is not a secret, so it can be sent to Claude in the project to commit.
+3. Go to **Workers & Pages → homeopathy-library-dev → Settings → Variables and Secrets → Add**. Choose type **Secret**, name `CLIENT_EMAILS`, value the email(s) allowed to see client records.
+
+The GitHub deploy applies the clients migration and creates the dev `CLIENT_KEY` itself. Dev holds only made-up clients, so that key doesn't need to be kept.
+
+**Or from a PC:**
 
 ```powershell
 npx wrangler d1 create homeopathy-library-dev-clients
@@ -131,6 +162,14 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 #   save the printed value in your password manager first
 npx wrangler secret put CLIENT_KEY --env production       # paste the same value
 ```
+
+Without a terminal: open any browser tab, press F12, and run this in the Console. It prints a key made by the browser's secure random generator:
+
+```js
+btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
+```
+
+Save it in your password manager, then add it in the dashboard: **Workers & Pages → homeopathy-library-prod → Settings → Variables and Secrets → Add**, type **Secret**, name `CLIENT_KEY`.
 
 Never paste it into chat, Git or a file in this folder.
 
