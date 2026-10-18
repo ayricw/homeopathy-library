@@ -26,6 +26,28 @@ Expected cost: $0. This fits within Workers Free, D1 Free, R2's free tier (10 GB
 
 To stop automatic deploys, delete either secret, or disable the workflow under **Actions → Deploy → ⋯**.
 
+## Scanned books from the Internet Archive
+
+`.github/workflows/import-books.yml` adds the scanned books listed in `library/sources/` (the files with a `"scan"` entry). It builds each book's text from the Internet Archive's OCR, with `[Pg N]` markers only where the Internet Archive read a printed page number, then imports it the same way as the Import page, so the Worker checks every passage.
+
+- **A push to a branch that changes the book list:** preview only. The log shows each book's file hashes, leaf and page counts, headings and the start of the text. No secrets are used.
+- **Actions → Import books → Run workflow:** imports into `dev` (or `production`, once it exists and `PROD_LIBRARY_URL` is set as a repository variable). Books already imported are skipped; an interrupted book resumes.
+- D1's free plan allows 100,000 rows written per day. A large book (one Clarke volume, about 2,500 passages plus the keyword index) uses a large share of that, so import one or two big books a day. If the limit is reached the run fails, and running it the next day resumes where it stopped.
+
+### One-time setup: an import token
+
+The workflow signs in to Access with a service token instead of an email. The Worker accepts that token only for the import API and the list of books (`IMPORT_SERVICE_TOKENS`), never for client records or searches.
+
+1. **Create the token.** In the Cloudflare dashboard, go to **Zero Trust → Access controls → Service credentials → Service Tokens → Create Service Token**. Name it `homeopathy-library-import`, pick a duration (one year is fine; it can be refreshed), and choose **Generate token**. Copy the **Client ID** and the **Client Secret**. The secret is shown only once.
+2. **Let it through Access.** In **Zero Trust → Access controls → Applications**, open the `homeopathy-library-dev` application, and add a new policy named `homeopathy-library-dev-import`: Action **Service Auth**, Include **Service Token** → `homeopathy-library-import`. Do not edit a policy other apps share.
+3. **Tell the Worker which token may import.** **Workers & Pages → homeopathy-library-dev → Settings → Variables and Secrets → Add**, type **Secret**, name `IMPORT_SERVICE_TOKENS`, value: the **Client ID** (it ends in `.access`). Not the secret.
+4. **Give GitHub the token.** In the repository, **Settings → Secrets and variables → Actions → New repository secret**: `CF_ACCESS_CLIENT_ID` (the Client ID) and `CF_ACCESS_CLIENT_SECRET` (the Client Secret).
+5. **Import.** **Actions → Import books → Run workflow**, pick `dev`, leave the book list blank for every listed book (or type source ids separated by spaces).
+
+For production, repeat steps 2 and 3 on `homeopathy-library-prod` with a policy named `homeopathy-library-prod-import`, and add the repository variable `PROD_LIBRARY_URL`. Production keeps the Import page off; this token is how books get there.
+
+To revoke it, delete the service token in Zero Trust. The workflow then fails with 403 and nothing else changes.
+
 ## How access is enforced
 
 1. **Cloudflare Access** on the Worker's `workers.dev` URL asks for sign-in before any request reaches the Worker. Preview URLs are disabled.

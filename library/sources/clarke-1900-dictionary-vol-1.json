@@ -1,0 +1,22 @@
+{
+  "id": "clarke-1900-dictionary-vol-1",
+  "title": "A Dictionary of Practical Materia Medica",
+  "author": "John Henry Clarke",
+  "editor": null,
+  "edition": "Volume I",
+  "publication_year": 1900,
+  "publisher": "The Homoeopathic Publishing Company, London",
+  "language": "en",
+  "source_url": "https://archive.org/details/adictionaryprac00clargoog",
+  "attribution": "John Henry Clarke, A Dictionary of Practical Materia Medica, Volume I (London: The Homoeopathic Publishing Company). Library copy digitized by Google; scan and OCR from the Internet Archive (item adictionaryprac00clargoog).",
+  "reuse_terms": "Public domain in the United States: published 1900, before 1931. The Internet Archive lists the item as not in copyright. Google's notice on its scans asks that they be used for personal, non-commercial purposes and that the Google attribution be kept; this private library follows that. People outside the United States should check their local copyright law.",
+  "notes": "Volume I, pages v to 951. The year on the scanned title page is unreadable in the OCR; 1900 is from the Internet Archive's catalog record.",
+  "scan": {
+    "archive_id": "adictionaryprac00clargoog",
+    "sha256": {
+      "searchtext": "a01061885e400bde24a15e797c33764dca13c91930c7c375ce3c71ac88e5f4c1",
+      "pageindex": "cb150b1d32adbe5904e0ebdf5c9413fec6ccac1f1d2a248259fab1c9da81ca0d",
+      "page_numbers": "844b4bf66a4c97742f148f566c47487a29717a041c7bddb50017ca978db48368"
+    }
+  }
+}

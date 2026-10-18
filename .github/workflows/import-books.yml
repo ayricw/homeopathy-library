@@ -1,0 +1,72 @@
+# Adds the scanned books listed in library/sources (the files with a "scan" entry) to the library.
+#   - A push to any branch other than main that changes the book list: preview only. Builds each
+#     book's text and prints its file hashes, page numbers and a sample to the log. Needs no secrets.
+#   - "Run workflow" on the Actions tab: import into dev or production.
+# Imports sign in with a Cloudflare Access service token (repository secrets CF_ACCESS_CLIENT_ID and
+# CF_ACCESS_CLIENT_SECRET; see DEPLOY.md). The Worker lets that token use only the import API.
+name: Import books
+
+on:
+  push:
+    branches-ignore: [main]
+    paths: [library/sources/**, shared/ocr.ts, scripts/import-scans.ts]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to import
+        type: choice
+        options: [dev, production]
+        default: dev
+      books:
+        description: Source ids to import, separated by spaces (blank for every listed book)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: import-books-${{ inputs.target || 'preview' }}
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run scans -- preview
+
+  import:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      # The production address is set as the repository variable PROD_LIBRARY_URL once production exists.
+      LIBRARY_URL: ${{ inputs.target == 'production' && vars.PROD_LIBRARY_URL || 'https://homeopathy-library-dev.aw-631.workers.dev' }}
+      BOOKS: ${{ inputs.books }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check the import token is set
+        run: |
+          if [ -z "$CF_ACCESS_CLIENT_ID" ] || [ -z "$CF_ACCESS_CLIENT_SECRET" ] || [ -z "$LIBRARY_URL" ]; then
+            echo "::error::Add CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET as repository secrets (and PROD_LIBRARY_URL as a variable for production). See DEPLOY.md."
+            exit 1
+          fi
+      - name: Import
+        run: |
+          for b in $BOOKS; do
+            [[ "$b" =~ ^[a-z0-9-]+$ ]] || { echo "::error::Not a source id: $b"; exit 1; }
+          done
+          npm run scans -- import $BOOKS

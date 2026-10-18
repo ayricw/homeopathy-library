@@ -1,0 +1,22 @@
+{
+  "id": "nash-1901-leaders-2nd-edition",
+  "title": "Leaders in Homoeopathic Therapeutics",
+  "author": "Eugene Beauharnais Nash",
+  "editor": null,
+  "edition": "Second edition, revised and enlarged",
+  "publication_year": 1901,
+  "publisher": "Boericke & Tafel, Philadelphia",
+  "language": "en",
+  "source_url": "https://archive.org/details/leadersinhomoeo03nashgoog",
+  "attribution": "E. B. Nash, Leaders in Homoeopathic Therapeutics, second edition (Philadelphia: Boericke & Tafel, 1901). Library copy digitized by Google; scan and OCR from the Internet Archive (item leadersinhomoeo03nashgoog).",
+  "reuse_terms": "Public domain in the United States: published 1901, before 1931. The Internet Archive lists the item as not in copyright. Google's notice on its scans asks that they be used for personal, non-commercial purposes and that the Google attribution be kept; this private library follows that. People outside the United States should check their local copyright law.",
+  "notes": "Pages 13 to 419. Edition, publisher and year from the title page.",
+  "scan": {
+    "archive_id": "leadersinhomoeo03nashgoog",
+    "sha256": {
+      "searchtext": "ad6c87d94312dbb30d24bde182c1d252098a5f3d231252a4cc2a1bc60e840318",
+      "pageindex": "f5e8bff6d93f362ec0d47a832d1c5de633f8a621799b7a81dd849413fcfba475",
+      "page_numbers": "88d94959666f1a12300ac7c9d5c093a581a73cf3a2b71190134dcea57733e267"
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "id": "clarke-1902-dictionary-vol-2-part-1",
+  "title": "A Dictionary of Practical Materia Medica",
+  "author": "John Henry Clarke",
+  "editor": null,
+  "edition": "Volume II, Part 1 (Iberis onward)",
+  "publication_year": 1902,
+  "publisher": "The Homoeopathic Publishing Company, London",
+  "language": "en",
+  "source_url": "https://archive.org/details/adictionaryprac03clargoog",
+  "attribution": "John Henry Clarke, A Dictionary of Practical Materia Medica, Volume II, Part 1 (Iberis onward) (London: The Homoeopathic Publishing Company). Library copy digitized by Google; scan and OCR from the Internet Archive (item adictionaryprac03clargoog).",
+  "reuse_terms": "Public domain in the United States: published 1902, before 1931. The Internet Archive lists the item as not in copyright. Google's notice on its scans asks that they be used for personal, non-commercial purposes and that the Google attribution be kept; this private library follows that. People outside the United States should check their local copyright law.",
+  "notes": "Volume II, Part 1 (Iberis onward), pages 3 to 735. Volume II is bound in two parts and paged throughout as one (title page). Year 1902 from the title page.",
+  "scan": {
+    "archive_id": "adictionaryprac03clargoog",
+    "sha256": {
+      "searchtext": "a20e2e8e1ef8439c0785bac54e0331c20cc4693c97eda4d421e957f5b5a677f2",
+      "pageindex": "5bc083bee69959aa606e3e63eedc064e822902d7de5795496a9f61b08e10c570",
+      "page_numbers": "c94e51e4ceeb755176c9b84ff2c9bb7842419f569e003e9951936427e412d658"
+    }
+  }
+}

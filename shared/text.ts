@@ -76,7 +76,10 @@ const GUTENBERG_START = /^\s*\*{3}\s*START OF (THE|THIS) PROJECT GUTENBERG E(BOO
 const GUTENBERG_END = /^\s*\*{3}\s*END OF (THE|THIS) PROJECT GUTENBERG E(BOOK|TEXT)/i;
 
 // Explicit page markers as used in transcriptions, e.g. "[Pg 12]", "[Page 12]", "[p. xii]".
-const PAGE_MARKER = /\[(?:Pg|Page|p\.)\s*([0-9]+|[ivxlcdm]+)\]/gi;
+// "[Unnumbered page]" (written by the scanned-book converter) ends the page in effect, so text on a
+// page without a printed number gets no page number instead of the previous page's.
+const PAGE_MARKER = /\[(?:(?:Pg|Page|p\.)\s*([0-9]+|[ivxlcdm]+)|Unnumbered page)\]/gi;
+const LEADING_PAGE_MARKER = /^\[(?:(?:Pg|Page|p\.)\s*([0-9]+|[ivxlcdm]+)|Unnumbered page)\]/i;
 
 const CHAPTER_HEADING = /^(CHAPTER|PART|BOOK|LECTURE|SECTION)\b[\s.:]+[\dIVXLCDM]+\b/i;
 
@@ -86,7 +89,7 @@ export function isHeading(paragraphLines: string[]): boolean {
   const t = paragraphLines[0].trim();
   if (t.length === 0 || t.length > 80) return false;
   if (CHAPTER_HEADING.test(t)) return true;
-  if (/^\[(?:Pg|Page|p\.)/i.test(t)) return false;
+  if (/^\[(?:Pg|Page|p\.|Unnumbered page)/i.test(t)) return false;
   const letters = t.match(/\p{L}/gu) ?? [];
   if (letters.length < 3) return false;
   const upper = letters.filter((c) => c === c.toUpperCase() && c !== c.toLowerCase()).length;
@@ -194,15 +197,15 @@ export function splitPassages(text: string, opts: SplitOptions = {}): SplitResul
       if (group.length && (groupLength() >= targetChars || groupLength() + len > maxChars)) flush();
       if (!group.length) {
         // A passage that opens with a page marker starts on that page.
-        const lead = c[0].text.trimStart().match(/^\[(?:Pg|Page|p\.)\s*([0-9]+|[ivxlcdm]+)\]/i);
-        groupPageStart = lead ? lead[1] : currentPage;
+        const lead = c[0].text.trimStart().match(LEADING_PAGE_MARKER);
+        groupPageStart = lead ? (lead[1] ?? null) : currentPage;
       }
       group.push(...c);
       // Advance the page counter past any markers inside this chunk.
       for (const l of c) {
         for (const m of l.text.matchAll(PAGE_MARKER)) {
-          markerCount++;
-          currentPage = m[1];
+          if (m[1]) markerCount++;
+          currentPage = m[1] ?? null;
         }
       }
     }
