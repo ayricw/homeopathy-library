@@ -24,12 +24,15 @@ export function remedyKey(heading: string): string {
     .toUpperCase();
 }
 
-/** The heading without page numbers, as running heads carry them ("796 PHOSPHORUS", "PHOSPHORUS 797."). */
+/**
+ * The heading without page numbers, as running heads carry them ("796 PHOSPHORUS", "PHOSPHORUS 797.").
+ * In an upper-case heading, words with lower-case letters are page numbers the OCR misread ("PHYTOLACCA Sr").
+ */
 export function remedyLabel(heading: string): string {
-  return heading
-    .trim()
-    .split(/\s+/)
-    .filter((w) => !/\d/.test(w))
+  const words = heading.trim().split(/\s+/);
+  const upper = words.some((w) => /^\P{Ll}*\p{Lu}{3,}\P{Ll}*$/u.test(w));
+  return words
+    .filter((w) => !/\d/.test(w) && !(upper && /\p{Ll}/u.test(w)))
     .join(" ")
     .replace(/[.:;,]+$/, "");
 }

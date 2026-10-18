@@ -23,7 +23,7 @@ export interface ScanText {
 }
 
 // Google's notice on the first leaf of its scans ("This is a digital copy of a book that was preserved...").
-const GOOGLE_NOTICE = /digital copy of a book that was preserved for generations|books\.google\.com/i;
+const GOOGLE_NOTICE = /digital\s+copy\s+of\s+a\s+book\s+that\s+was\s+preserved|books\.google\.com|Google\s+Book\s+Search/i;
 // The "Digitized by Google" stamp at the foot of each page, often misread by the OCR ("Digitized by VjOOQ IC").
 const WATERMARK = /^\s*Digiti[sz]ed\s+by\b.{0,30}$/i;
 const PAGE_NUMBER = /^([0-9]+|[ivxlcdm]+)$/i;

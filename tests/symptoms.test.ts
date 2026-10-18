@@ -48,5 +48,8 @@ describe("remedy headings from running heads", () => {
     expect(remedyKey("PHOSPHORUS 797.")).toBe("PHOSPHORUS");
     expect(remedyLabel("PHOSPHORICUM ACIDUM 267")).toBe("PHOSPHORICUM ACIDUM");
     expect(remedyLabel("ABIES CANADENSIS.")).toBe("ABIES CANADENSIS");
+    expect(remedyLabel("PHYTOLACCA Sr")).toBe("PHYTOLACCA");
+    expect(remedyLabel("ACONITUM CAMMARUM ii")).toBe("ACONITUM CAMMARUM");
+    expect(remedyLabel("Abies canadensis.")).toBe("Abies canadensis");
   });
 });

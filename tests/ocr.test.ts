@@ -17,7 +17,7 @@ function item(leaves: { text: string; page: string }[]) {
 }
 
 const leaves = [
-  { text: "Google\nThis is a digital copy of a book that was preserved for generations on library shelves.", page: "" },
+  { text: "Google\nThis  is  a  digital  copy  of  a  book  that  was  preserved  for  generations on Hbrary shelves.", page: "" },
   { text: "A DICTIONARY OF PRACTICAL MATERIA MEDICA\nBy John Henry Clarke.", page: "" },
   { text: "", page: "" },
   { text: "PHOSPHORUS.\nPhosphorus. The element. Trituration.\nBurning pains everywhere; in the stomach, better from cold drinks.", page: "769" },

@@ -129,7 +129,16 @@ async function main() {
   if (!sources.length) console.log("No scanned books are listed in library/sources.");
 
   if (mode === "preview") {
-    for (const s of sources) preview(s, await build(s, false));
+    let failed = 0;
+    for (const s of sources) {
+      try {
+        preview(s, await build(s, false));
+      } catch (err) {
+        failed++;
+        console.error(`\n=== ${s.id}: preview failed: ${err instanceof Error ? `${err.message} ${(err as { cause?: unknown }).cause ?? ""}` : err}`);
+      }
+    }
+    if (failed) process.exit(1);
     return;
   }
 
