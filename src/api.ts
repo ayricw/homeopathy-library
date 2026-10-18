@@ -65,6 +65,20 @@ export interface SourceDetail {
   issues: { kind: string; severity: string; detail: string; location: string | null }[];
 }
 
+export interface SymptomResponse {
+  symptoms: string[];
+  skipped: string[];
+  total: number;
+  remedies: { remedy: string; sources: string[]; covered: number; totalHits: number; cells: { hits: number; passageId: number | null }[] }[];
+}
+
+export async function post<T>(path: string, data: unknown): Promise<T> {
+  const res = await fetch(path, { method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: JSON.stringify(data) });
+  const body = (await res.json().catch(() => ({}))) as { error?: string };
+  if (!res.ok) throw new Error(body.error ?? `Request failed (${res.status})`);
+  return body as T;
+}
+
 export async function get<T>(path: string): Promise<T> {
   const res = await fetch(path, { headers: { accept: "application/json" } });
   const body = (await res.json().catch(() => ({}))) as { error?: string };
