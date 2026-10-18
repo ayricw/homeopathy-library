@@ -23,7 +23,7 @@ const leaves = [
   { text: "PHOSPHORUS.\nPhosphorus. The element. Trituration.\nBurning pains everywhere; in the stomach, better from cold drinks.", page: "769" },
   { text: "770 PHOSPHORUS\nMind.—Anxiety, worse at twilight. Désir de compagnie.\nDigitized by VjOOQ IC", page: "770" },
   { text: "Plate showing the plant.", page: "" },
-  { text: "PHYTOLACCA.\nPain in the throat, worse from hot drinks.", page: "771" },
+  { text: "PHYTOLACCA.\nPain in the throat, worse from hot drinks.\nVOL. II. 49", page: "771" },
 ];
 
 describe("buildScanText", () => {
@@ -32,10 +32,10 @@ describe("buildScanText", () => {
 
   it("marks each page with its printed number and nothing else", () => {
     expect(scan.text).toContain("PHOSPHORUS.\n\n[Pg 769] Phosphorus. The element.");
-    expect(scan.text).toContain("[Pg 770] 770 PHOSPHORUS");
+    expect(scan.text).toContain("770 PHOSPHORUS\n\n[Pg 770] Mind.—Anxiety");
     expect(scan.text).toContain("[Unnumbered page] Plate showing the plant.");
-    expect(scan.text).toContain("PHYTOLACCA.\n\n[Pg 771] Pain in the throat");
-    expect(scan.stats).toMatchObject({ leaves: 7, numbered: 3, unnumbered: 2, blank: 1, boilerplate: 1, watermarks: 1 });
+    expect(scan.text).toContain("PHYTOLACCA.\n\n[Pg 771] Pain in the throat, worse from hot drinks.\nVOL. II. 49\n");
+    expect(scan.stats).toMatchObject({ leaves: 7, numbered: 3, unnumbered: 2, blank: 1, boilerplate: 1, watermarks: 1, footers: 1 });
   });
 
   it("leaves out Google's notice and the Digitized-by stamp, and keeps the OCR text otherwise as given", () => {
@@ -49,9 +49,10 @@ describe("buildScanText", () => {
     const page = (s: string) => passages.find((p) => p.text.includes(s));
     expect(page("By John Henry Clarke")).toMatchObject({ pageStart: null, pageEnd: null });
     expect(page("Burning pains")).toMatchObject({ section: "PHOSPHORUS.", pageStart: "769" });
-    expect(page("Anxiety")).toMatchObject({ pageStart: "770", pageEnd: "770" });
+    expect(page("Anxiety")).toMatchObject({ section: "770 PHOSPHORUS", pageStart: "770", pageEnd: "770" });
     expect(page("Plate showing")).toMatchObject({ pageStart: null, pageEnd: null });
     expect(page("Pain in the throat")).toMatchObject({ section: "PHYTOLACCA.", pageStart: "771" });
+    expect(passages.some((p) => p.section?.startsWith("VOL"))).toBe(false);
   });
 
   it("reads offsets as code points", () => {

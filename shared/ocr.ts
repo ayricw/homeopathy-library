@@ -19,7 +19,7 @@ export interface ScanPage {
 export interface ScanText {
   text: string;
   issues: Issue[];
-  stats: { leaves: number; numbered: number; unnumbered: number; blank: number; boilerplate: number; watermarks: number };
+  stats: { leaves: number; numbered: number; unnumbered: number; blank: number; boilerplate: number; watermarks: number; footers: number };
 }
 
 // Google's notice on the first leaf of its scans ("This is a digital copy of a book that was preserved...").
@@ -38,7 +38,7 @@ export function buildScanText(searchtext: string, pageindex: unknown, pageNumber
   }
   // Offsets count Unicode code points, not UTF-16 units.
   const chars = Array.from(searchtext);
-  const stats = { leaves: pages.length, numbered: 0, unnumbered: 0, blank: 0, boilerplate: 0, watermarks: 0 };
+  const stats = { leaves: pages.length, numbered: 0, unnumbered: 0, blank: 0, boilerplate: 0, watermarks: 0, footers: 0 };
   const out: string[] = [];
 
   for (let i = 0; i < pages.length; i++) {
@@ -69,16 +69,21 @@ export function buildScanText(searchtext: string, pageindex: unknown, pageNumber
     if (numbered) stats.numbered++;
     else stats.unnumbered++;
     const marker = numbered ? `[Pg ${number}]` : "[Unnumbered page]";
-    // The marker goes at the start of the page's first line: a running head that carries the page
-    // number ("PHOSPHORICUM ACIDUM 769"), or else the first line that is not a heading, so headings
-    // stay headings and the marker stays with the page's own text.
-    let at = 0;
-    if (!(numbered && isRunningHead(lines[0], number))) {
-      at = lines.findIndex((l) => !isHeading([l]));
-    }
+    // The marker goes at the start of the page's first line that is not a heading, so headings stay
+    // headings (in many books the running head, "PHOSPHORUS 781", names the remedy on the page) and
+    // the marker stays with the page's own text.
+    const at = lines.findIndex((l) => !isHeading([l]));
     if (at < 0) lines.push(marker);
     else lines[at] = `${marker} ${lines[at].trimStart()}`;
-    out.push(lines.join("\n\n"));
+    // A printer's mark at the foot of the page ("VOL. II. 49") would read as a heading on its own,
+    // so it stays attached to the line above it.
+    let page = lines.join("\n\n");
+    const last = lines[lines.length - 1];
+    if (lines.length > 1 && isHeading([last]) && last.trim().length <= 24 && /\d|^\s*VOL\b/i.test(last)) {
+      stats.footers++;
+      page = lines.slice(0, -1).join("\n\n") + "\n" + last;
+    }
+    out.push(page);
   }
 
   const issues: Issue[] = [
@@ -104,15 +109,6 @@ export function buildScanText(searchtext: string, pageindex: unknown, pageNumber
     });
   }
   return { text: out.join("\n\n") + "\n", issues, stats };
-}
-
-/** A short first line that contains the printed page number as a word, e.g. "770 PHOSPHORICUM ACIDUM". */
-function isRunningHead(line: string, number: string): boolean {
-  if (line.length > 80) return false;
-  return line
-    .trim()
-    .split(/\s+/)
-    .some((w) => w.replace(/[^\p{L}\p{N}]/gu, "").toLowerCase() === number.toLowerCase());
 }
 
 function readPages(raw: unknown): ScanPage[] {

@@ -18,10 +18,20 @@ const SUBHEADING =
 
 /** "ABIES CANADENSIS." and "Abies canadensis" are the same remedy. */
 export function remedyKey(heading: string): string {
-  return heading
+  return remedyLabel(heading)
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim()
     .toUpperCase();
+}
+
+/** The heading without page numbers, as running heads carry them ("796 PHOSPHORUS", "PHOSPHORUS 797."). */
+export function remedyLabel(heading: string): string {
+  return heading
+    .trim()
+    .split(/\s+/)
+    .filter((w) => !/\d/.test(w))
+    .join(" ")
+    .replace(/[.:;,]+$/, "");
 }
 
 export function isRemedyHeading(heading: string | null): heading is string {
@@ -83,7 +93,7 @@ export function rankRemedies(symptomCount: number, rows: HeadingHits[], limit = 
     let row = byKey.get(key);
     if (!row) {
       row = {
-        remedy: r.heading.trim().replace(/[.:;,]+$/, ""),
+        remedy: remedyLabel(r.heading),
         sources: [],
         covered: 0,
         totalHits: 0,
