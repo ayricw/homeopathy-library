@@ -34,7 +34,7 @@ Check the current official Cloudflare and Anthropic documentation before choosin
 - `shared/text.ts`: UTF-8 decoding, Gutenberg body detection, heading and page-marker detection, passage splitting. Pure and deterministic.
 - `shared/query.ts`: converts user input to a safe FTS5 query (every term quoted).
 - `shared/oorep.ts`: reads one repertory from an OOREP database dump and builds the compact data file. Used by `scripts/build-repertory.ts`.
-- `shared/repertory.ts`: rubric search and repertorisation (rank remedies over the case's rubrics by rubrics covered or by total grade), run in the browser by the Symptoms page.
+- `shared/repertory.ts`: rubric search, the rubric tree for step-by-step browsing (section, then rubric, then sub-rubric, for example Ear > pain > burning; sections in Kent's head-to-toe order), and repertorisation (rank remedies over the case's rubrics by rubrics covered or by total grade), run in the browser by the Symptoms page.
 - `library/repertories/*.json`: metadata for each repertory.
 - `shared/symptoms.ts`: symptom search. Cleans the symptom list, groups keyword hits under remedy headings, and ranks remedies by symptoms covered. Used by `POST /api/symptoms` and the Symptoms page.
 - `worker/index.ts`: the API (sources, search, passages with context, imports).

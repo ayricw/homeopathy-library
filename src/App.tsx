@@ -2,7 +2,20 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "re
 import { reflow } from "../shared/text";
 import { ImportPage } from "./ImportPage";
 import { excerpt, formatReferences, groupBySource, isCollected, useCollected, type CollectedItem } from "./collect";
-import { repertorize, rubricRemedies, searchRubrics, tokenize, MAX_CASE_RUBRICS, type RepertoryFile, type Rubric } from "../shared/repertory";
+import {
+  ancestry,
+  buildTree,
+  filterChildren,
+  repertorize,
+  rubricRemedies,
+  searchRubrics,
+  tokenize,
+  toRubric,
+  MAX_CASE_RUBRICS,
+  type RepertoryFile,
+  type Rubric,
+  type RubricTree,
+} from "../shared/repertory";
 import { get, post, type SymptomResponse, type PassageRef, type PassageResponse, type SearchResponse, type Source, type SourceDetail } from "./api";
 
 // ---------- tiny hash router: #/search?q=..  #/passage/12  #/sources  #/sources/id ----------
@@ -358,21 +371,32 @@ function Context({ p, q, current, children }: { p: PassageRef; q: string; curren
 // Symptoms and chosen rubrics live only in memory: never in the URL, browser storage or the server.
 // They survive moving between pages and are gone when the tab is closed or reloaded.
 
-const caseMemory: { rubrics: Rubric[]; method: "symptoms" | "grades"; tab: "repertory" | "books" } = {
+const caseMemory: {
+  rubrics: Rubric[];
+  method: "symptoms" | "grades";
+  tab: "repertory" | "books";
+  mode: "browse" | "find";
+  /** Path of the open level in Browse, or null for the chapter list. */
+  browseAt: string | null;
+} = {
   rubrics: [],
   method: "symptoms",
   tab: "repertory",
+  mode: "browse",
+  browseAt: null,
 };
 
+type LoadedRepertory = { data: RepertoryFile; tokens: string[][]; tree: RubricTree };
+
 // The repertory file is loaded once per page load and searched in the browser.
-let repertoryLoad: Promise<{ data: RepertoryFile; tokens: string[][] } | null> | null = null;
+let repertoryLoad: Promise<LoadedRepertory | null> | null = null;
 function loadRepertory() {
   repertoryLoad ??= fetch("/data/repertory.json", { headers: { accept: "application/json" } })
     .then(async (res) => {
       // A missing file falls through to the app's index.html, so check the type.
       if (!res.ok || !(res.headers.get("content-type") ?? "").includes("json")) return null;
       const data = (await res.json()) as RepertoryFile;
-      return { data, tokens: tokenize(data) };
+      return { data, tokens: tokenize(data), tree: buildTree(data) };
     })
     .catch((e) => {
       repertoryLoad = null;
@@ -382,7 +406,7 @@ function loadRepertory() {
 }
 
 function useRepertory() {
-  const [state, setState] = useState<{ rep?: { data: RepertoryFile; tokens: string[][] } | null; error?: string }>({});
+  const [state, setState] = useState<{ rep?: LoadedRepertory | null; error?: string }>({});
   useEffect(() => {
     let live = true;
     loadRepertory()
@@ -421,7 +445,7 @@ function SymptomsPage() {
         ) : rep.rep === null ? (
           <p className="muted">No repertory is included in this deployment yet. See README.md for how to add one.</p>
         ) : (
-          <RepertoryCase data={rep.rep.data} tokens={rep.rep.tokens} />
+          <RepertoryCase data={rep.rep.data} tokens={rep.rep.tokens} tree={rep.rep.tree} />
         )
       ) : (
         <BookSymptoms />
@@ -446,12 +470,24 @@ function RubricRemedies({ data, id }: { data: RepertoryFile; id: number }) {
   );
 }
 
-function RepertoryCase({ data: rep, tokens }: { data: RepertoryFile; tokens: string[][] }) {
+function RepertoryCase({ data: rep, tokens, tree }: { data: RepertoryFile; tokens: string[][]; tree: RubricTree }) {
   const [rubrics, setRubricsState] = useState<Rubric[]>(caseMemory.rubrics);
   const [method, setMethodState] = useState(caseMemory.method);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<number | null>(null);
+  const [mode, setModeState] = useState(caseMemory.mode);
+  const [browsePath, setBrowsePath] = useState(caseMemory.browseAt);
+  const setMode = (m: typeof mode) => {
+    caseMemory.mode = m;
+    setModeState(m);
+  };
+  const browseAt = browsePath === null ? null : (tree.byPath.get(browsePath) ?? null);
+  const goTo = (n: number | null) => {
+    const path = n === null ? null : tree.nodes[n].path;
+    caseMemory.browseAt = path;
+    setBrowsePath(path);
+  };
   const setRubrics = (next: Rubric[]) => {
     caseMemory.rubrics = next;
     setRubricsState(next);
@@ -474,7 +510,8 @@ function RepertoryCase({ data: rep, tokens }: { data: RepertoryFile; tokens: str
   return (
     <>
       <p className="muted">
-        Find the rubric for each symptom and add it to the case. Remedies are ranked by how many of the chosen rubrics list
+        Start from the body area and narrow down (Ear, then pain, then burning), or find a rubric by its words, and add
+        each symptom to the case. Remedies are ranked by how many of the chosen rubrics list
         them, then by their grades (1 to 3). Rubrics come from{" "}
         <a href={rep.source.source_url} target="_blank" rel="noopener noreferrer" title={rep.source.reuse_terms}>
           {rep.source.title}
@@ -482,50 +519,67 @@ function RepertoryCase({ data: rep, tokens }: { data: RepertoryFile; tokens: str
         ({rep.rubrics.length.toLocaleString()} rubrics). Everything here runs in your browser and nothing is saved. This shows what the repertory lists. It is not
         evidence that a remedy works and it is not a prescription.
       </p>
-      <form
-        className="search"
-        role="search"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setQuery(draft.trim());
-        }}
-      >
-        <label htmlFor="rubric-q" className="visually-hidden">
-          Find a rubric
-        </label>
-        <input
-          id="rubric-q"
-          type="search"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="Find a rubric, e.g. anxiety night, or restless* (a * matches word endings)"
-        />
-        <button type="submit">Find</button>
-      </form>
+      <div className="tabs sub" role="tablist" aria-label="How to choose rubrics">
+        <button type="button" role="tab" aria-selected={mode === "browse"} onClick={() => setMode("browse")}>
+          Browse
+        </button>
+        <button type="button" role="tab" aria-selected={mode === "find"} onClick={() => setMode("find")}>
+          Find by words
+        </button>
+      </div>
+      {mode === "browse" ? (
+        <RubricBrowser data={rep} tree={tree} at={browseAt} goTo={goTo} ids={ids} full={full} add={add} />
+      ) : (
+        <>
+        <form
+          className="search"
+          role="search"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setQuery(draft.trim());
+          }}
+        >
+          <label htmlFor="rubric-q" className="visually-hidden">
+            Find a rubric
+          </label>
+          <input
+            id="rubric-q"
+            type="search"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Find a rubric, e.g. anxiety night, or restless* (a * matches word endings)"
+          />
+          <button type="submit">Find</button>
+        </form>
 
-      {query && (
-        <div className="rubric-results">
-          {found && found.length === 0 && <p className="muted">No rubric contains all of those words.</p>}
-          <ul className="rubric-list">
-            {found?.map((r) => {
-              const inCase = ids.includes(r.id);
-              return (
-                <li key={r.id}>
-                  <div className="rubric-row">
-                    <button type="button" className="link" aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)}>
-                      {r.path}
-                    </button>
-                    <span className="muted count">{r.remedyCount}</span>
-                    <button type="button" className={`collect${inCase ? " on" : ""}`} disabled={inCase || full} onClick={() => add(r)}>
-                      {inCase ? "Added ✓" : "Add"}
-                    </button>
-                  </div>
-                  {open === r.id && <RubricRemedies data={rep} id={r.id} />}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
+        {query && (
+          <div className="rubric-results">
+            {found && found.length === 0 && <p className="muted">No rubric contains all of those words.</p>}
+            <ul className="rubric-list">
+              {found?.map((r) => {
+                const inCase = ids.includes(r.id);
+                return (
+                  <li key={r.id}>
+                    <div className="rubric-row">
+                      <button type="button" className="link" aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)}>
+                        {r.path}
+                      </button>
+                      <span className="muted count">{r.remedyCount}</span>
+                      <button type="button" className="secondary small-btn" onClick={() => (goTo(tree.byPath.get(r.path) ?? null), setMode("browse"))}>
+                        In tree
+                      </button>
+                      <button type="button" className={`collect${inCase ? " on" : ""}`} disabled={inCase || full} onClick={() => add(r)}>
+                        {inCase ? "Added ✓" : "Add"}
+                      </button>
+                    </div>
+                    {open === r.id && <RubricRemedies data={rep} id={r.id} />}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+        </>
       )}
 
       <h2 className="case-head">
@@ -600,6 +654,134 @@ function RepertoryCase({ data: rep, tokens }: { data: RepertoryFile; tokens: str
         </>
       )}
     </>
+  );
+}
+
+function RubricBrowser({
+  data,
+  tree,
+  at,
+  goTo,
+  ids,
+  full,
+  add,
+}: {
+  data: RepertoryFile;
+  tree: RubricTree;
+  at: number | null;
+  goTo: (n: number | null) => void;
+  ids: number[];
+  full: boolean;
+  add: (r: Rubric) => void;
+}) {
+  const [filter, setFilter] = useState("");
+  const [open, setOpen] = useState<number | null>(null);
+  useEffect(() => {
+    setFilter("");
+    setOpen(null);
+  }, [at]);
+  const node = at === null ? null : tree.nodes[at];
+  const list = useMemo(() => filterChildren(tree, at, filter), [tree, at, filter]);
+
+  const addButton = (id: number) => {
+    const inCase = ids.includes(id);
+    return (
+      <button type="button" className={`collect${inCase ? " on" : ""}`} disabled={inCase || full} onClick={() => add(toRubric(data, id))}>
+        {inCase ? "Added ✓" : "Add"}
+      </button>
+    );
+  };
+
+  if (node === null) {
+    return (
+      <>
+        <p className="muted small">Pick the body area or section the symptom belongs to.</p>
+        <ul className="chapters">
+          {tree.roots.map((n) => (
+            <li key={n}>
+              <button type="button" onClick={() => goTo(n)}>
+                {tree.nodes[n].label}
+                <small>{tree.nodes[n].children.length}</small>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </>
+    );
+  }
+
+  return (
+    <div className="browse">
+      <nav className="crumbs" aria-label="Rubric path">
+        <button type="button" className="link" onClick={() => goTo(null)}>
+          All sections
+        </button>
+        {ancestry(tree, at!).map((n) => (
+          <span key={n}>
+            {" › "}
+            {n === at ? (
+              <b>{tree.nodes[n].label}</b>
+            ) : (
+              <button type="button" className="link" onClick={() => goTo(n)}>
+                {tree.nodes[n].label}
+              </button>
+            )}
+          </span>
+        ))}
+      </nav>
+      {node.id !== null && (
+        <div className="rubric-row here">
+          <button type="button" className="link" aria-expanded={open === -1} onClick={() => setOpen(open === -1 ? null : -1)}>
+            {node.path} <span className="muted">· {node.remedyCount} remed{node.remedyCount === 1 ? "y" : "ies"}</span>
+          </button>
+          {addButton(node.id)}
+        </div>
+      )}
+      {node.id !== null && open === -1 && <RubricRemedies data={data} id={node.id} />}
+      {node.children.length > 0 && (
+        <>
+          <label htmlFor="browse-filter" className="visually-hidden">
+            Narrow this list
+          </label>
+          <input
+            id="browse-filter"
+            className="browse-filter"
+            type="search"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder={`Narrow these ${node.children.length} options, e.g. burn, puls, night`}
+          />
+          {list.length === 0 && <p className="muted">Nothing here starts with those words.</p>}
+          <ul className="rubric-list">
+            {list.map((c) => {
+              const child = tree.nodes[c];
+              return (
+                <li key={c}>
+                  <div className="rubric-row">
+                    {child.children.length > 0 ? (
+                      <button type="button" className="link" onClick={() => goTo(c)}>
+                        {child.label} <span className="more">{child.children.length} ›</span>
+                      </button>
+                    ) : (
+                      <button type="button" className="link" aria-expanded={open === c} onClick={() => setOpen(open === c ? null : c)}>
+                        {child.label}
+                      </button>
+                    )}
+                    {child.id !== null && <span className="muted count">{child.remedyCount}</span>}
+                    {child.id !== null && addButton(child.id)}
+                  </div>
+                  {open === c && child.id !== null && <RubricRemedies data={data} id={child.id} />}
+                </li>
+              );
+            })}
+          </ul>
+          <p className="muted small">
+            A number with › opens more detailed options. The other number is how many remedies the rubric lists. Tap a rubric
+            without › to see its remedies.
+          </p>
+        </>
+      )}
+    </div>
   );
 }
 

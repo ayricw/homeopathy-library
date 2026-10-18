@@ -52,7 +52,7 @@ main { max-width: 46rem; margin: 0 auto; padding: 1rem; }
 }
 
 .search { display: flex; gap: 0.5rem; }
-.search input {
+.search input, .browse-filter {
   flex: 1; min-width: 0; padding: 0.7rem 0.8rem; border: 1px solid var(--border); border-radius: 8px;
   background: var(--surface); color: var(--text);
 }
@@ -209,3 +209,15 @@ button.link:hover, button.link:focus-visible { color: var(--accent); text-decora
 @media (max-width: 560px) { .rep.grid .rep-rubric { min-width: 10rem; } }
 main:has(> .wide) { max-width: 72rem; }
 .rubric-list { max-height: 24rem; overflow-y: auto; }
+.tabs.sub { margin-top: 0; }
+.tabs.sub button { font-size: 14px; }
+.chapters { list-style: none; padding: 0; margin: 0.5rem 0 1rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 0.4rem; font-family: system-ui, sans-serif; }
+.chapters button { width: 100%; display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; text-align: left; background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+.chapters button:hover, .chapters button:focus-visible { border-color: var(--accent); color: var(--accent); }
+.chapters small { color: var(--muted); font-size: 12px; }
+.crumbs { font: 15px/1.6 system-ui, sans-serif; margin: 0.25rem 0 0.6rem; }
+.browse .here { padding: 0.5rem 0.7rem; margin-bottom: 0.5rem; border: 1px solid var(--accent); border-radius: 10px; background: var(--surface); font: 15px/1.4 system-ui, sans-serif; }
+.browse .here .collect { position: static; }
+.browse-filter { display: block; width: 100%; margin: 0.25rem 0 0.5rem; padding: 0.6rem 0.8rem; }
+.rubric-row .more { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.small-btn { padding: 0.15rem 0.5rem; font-size: 12px; }

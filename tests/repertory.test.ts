@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseOorep, repertoryFile, type RepertoryMeta } from "../shared/oorep";
-import { repertorize, rubricRemedies, searchRubrics, tokenize } from "../shared/repertory";
+import { ancestry, buildTree, filterChildren, repertorize, rubricRemedies, searchRubrics, tokenize, type RepertoryFile } from "../shared/repertory";
 
 const dump = readFileSync(new URL("./fixtures/sample-oorep.sql", import.meta.url), "utf8");
 const meta = JSON.parse(readFileSync(new URL("./fixtures/sample-repertory.json", import.meta.url), "utf8")) as RepertoryMeta;
@@ -69,5 +69,43 @@ describe("repertorisation", () => {
 
   it("ignores unknown rubric ids", () => {
     expect(repertorize(file, [head, 999]).map((x) => x.abbrev)).toEqual(["Bet.", "O'Rem."]);
+  });
+});
+
+describe("rubric tree", () => {
+  const data: RepertoryFile = {
+    ...file,
+    remedies: [["A.", "A"], ["B.", "B"]],
+    rubrics: [
+      ["Ear, pain, pulsating", [1 * 4 + 2]],
+      ["Ear, pain", [0 * 4 + 3, 1 * 4 + 1]],
+      ["Ear, pain, burning", [0 * 4 + 1]],
+      ["Mind, anxiety", [0 * 4 + 2]],
+      ["Ear, pain, burning", [1 * 4 + 1]],
+      ["Ear, noises, roaring", [1 * 4 + 1]],
+    ],
+  };
+  const tree = buildTree(data);
+  const at = (path: string) => tree.byPath.get(path)!;
+  const labels = (list: number[]) => list.map((n) => tree.nodes[n].label);
+
+  it("orders chapters head to toe and sub-rubrics A to Z", () => {
+    expect(labels(tree.roots)).toEqual(["Mind", "Ear"]);
+    expect(labels(tree.nodes[at("Ear")].children)).toEqual(["noises", "pain"]);
+    expect(labels(tree.nodes[at("Ear, pain")].children)).toEqual(["burning", "pulsating"]);
+  });
+
+  it("adds levels the repertory lists no remedies under, and keeps the first of a repeated rubric", () => {
+    expect(tree.nodes[at("Ear")].id).toBeNull();
+    expect(tree.nodes[at("Ear, noises")].id).toBeNull();
+    expect(tree.nodes[at("Ear, pain")]).toMatchObject({ id: 1, remedyCount: 2 });
+    expect(tree.nodes[at("Ear, pain, burning")].id).toBe(2);
+  });
+
+  it("walks back to the chapter and filters a level by word starts", () => {
+    expect(labels(ancestry(tree, at("Ear, pain, burning")))).toEqual(["Ear", "pain", "burning"]);
+    expect(labels(filterChildren(tree, at("Ear, pain"), "PULS"))).toEqual(["pulsating"]);
+    expect(labels(filterChildren(tree, at("Ear, pain"), "sating"))).toEqual([]);
+    expect(labels(filterChildren(tree, null, ""))).toEqual(["Mind", "Ear"]);
   });
 });
