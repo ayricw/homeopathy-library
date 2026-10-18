@@ -221,3 +221,16 @@ main:has(> .wide) { max-width: 72rem; }
 .browse-filter { display: block; width: 100%; margin: 0.25rem 0 0.5rem; padding: 0.6rem 0.8rem; }
 .rubric-row .more { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .small-btn { padding: 0.15rem 0.5rem; font-size: 12px; }
+.warning { padding: 0.6rem 0.8rem; border: 1px solid var(--border); border-left: 4px solid #c08a1e; border-radius: 8px; background: var(--surface); font: 14px/1.45 system-ui, sans-serif; }
+button.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+.client-list { list-style: none; padding: 0; margin: 0.75rem 0; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); font: 15px/1.4 system-ui, sans-serif; }
+.client-list li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem 1rem; padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); }
+.client-list li:last-child { border-bottom: 0; }
+.client-list .muted { font-size: 13px; }
+.client-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; }
+.client-head button { font-size: 13px; padding: 0.3rem 0.7rem; }
+.save-state { font: 13px system-ui, sans-serif; color: var(--muted); }
+.save-state.error { color: var(--danger); }
+.controls input { padding: 0.4rem 0.5rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+#visit-remedy { flex: 1; min-width: 12rem; }
+.visit-notes { display: block; width: 100%; padding: 0.7rem 0.8rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: 15px/1.5 system-ui, sans-serif; resize: vertical; }

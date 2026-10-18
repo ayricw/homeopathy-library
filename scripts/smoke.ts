@@ -70,6 +70,11 @@ async function main() {
     shell: process.platform === "win32",
   });
   if (mig.status !== 0) throw new Error(`Migrations failed:\n${mig.stdout}${mig.stderr}`);
+  const clientMig = spawnSync(npx, ["wrangler", "d1", "migrations", "apply", "CLIENTS", "--local", "--persist-to", STATE], {
+    encoding: "utf8",
+    shell: process.platform === "win32",
+  });
+  if (clientMig.status !== 0) throw new Error(`Client migrations failed:\n${clientMig.stdout}${clientMig.stderr}`);
 
   const server = spawn(npx, ["vite", "dev", "--port", String(PORT), "--strictPort"], {
     env: { ...process.env, LIBRARY_PERSIST: STATE },
@@ -225,9 +230,53 @@ async function checks() {
   check("page markers produce page references", s.body?.results?.[0]?.page_start === "1" && s.body.results[0].page_end === "3", s.body?.results?.[0]);
   check("chapter references are kept", s.body?.results?.[0]?.chapter === "CHAPTER I. ON TESTING", s.body?.results?.[0]);
 
+  // Client records (made-up client): create, visit, save, read back, export, delete
+  const json = (method: string, data?: unknown) => ({
+    method,
+    headers: { "content-type": "application/json" },
+    body: data === undefined ? undefined : JSON.stringify(data),
+  });
+  const cfg = await api("/api/config");
+  check("client records are enabled locally", cfg.body?.clients === true, cfg.body);
+  const made = await api("/api/clients", json("POST", { name: "  Test   Client " }));
+  check("client is created", made.status === 201 && /^[0-9a-f-]{36}$/.test(made.body?.id), made);
+  const cid = made.body?.id;
+  check("blank client name is refused", (await api("/api/clients", json("POST", { name: " " }))).status === 400);
+  const visit = await api(`/api/clients/${cid}/visits`, json("POST", { date: "2026-10-18" }));
+  check("visit is started", visit.status === 201, visit);
+  const vid = visit.body?.id;
+  const saved = await api(
+    `/api/visits/${vid}`,
+    json("PUT", { date: "2026-10-19", data: { rubrics: ["Ear, pain, burning"], method: "grades", notes: "Test note", remedy: "Test remedy" } }),
+  );
+  check("visit is saved", saved.status === 200, saved);
+  const read = await api(`/api/visits/${vid}`);
+  check(
+    "visit reads back",
+    read.body?.visit?.date === "2026-10-19" && read.body.visit.rubrics[0] === "Ear, pain, burning" && read.body.visit.notes === "Test note" && read.body.client.name === "Test Client",
+    read.body,
+  );
+  const list = await api("/api/clients");
+  check("client list shows the visit", list.body?.clients?.[0]?.visit_count === 1 && list.body.clients[0].last_visit === "2026-10-19", list.body);
+  const raw = spawnSync(npx, ["wrangler", "d1", "execute", "CLIENTS", "--local", "--persist-to", STATE, "--json", "--command", "SELECT name_enc, data_enc FROM clients, visits"], {
+    encoding: "utf8",
+    shell: process.platform === "win32",
+  });
+  check("names and notes are encrypted in the database", raw.status === 0 && /v1:/.test(raw.stdout) && !/Test Client|Test note|Ear, pain/.test(raw.stdout), raw.stdout + raw.stderr);
+  const exp = await fetch(`${BASE}/api/clients/${cid}/export`);
+  const record: any = await exp.json().catch(() => null);
+  check(
+    "client record downloads",
+    /attachment/.test(exp.headers.get("content-disposition") ?? "") && record?.client?.name === "Test Client" && record.visits?.[0]?.remedy === "Test remedy",
+    record,
+  );
+  check("client delete works", (await api(`/api/clients/${cid}`, json("DELETE"))).status === 200);
+  check("deleted client's visits are gone", (await api(`/api/visits/${vid}`)).status === 404);
+  check("cross-site client writes are refused", (await api("/api/clients", { ...json("POST", { name: "x" }), headers: { "content-type": "application/json", origin: "https://evil.example" } })).status === 403);
+
   // Front end is served
   const html = await fetch(`${BASE}/`).then((x) => x.text());
-  check("web page is served", /<div id="root">/.test(html));
+  check("web page is served", /<div id="root">/.test(html), html.slice(0, 300));
   rmSync(tmp, { recursive: true, force: true });
 }
 

@@ -85,3 +85,37 @@ export async function get<T>(path: string): Promise<T> {
   if (!res.ok) throw new Error(body.error ?? `Request failed (${res.status})`);
   return body as T;
 }
+
+export interface ClientSummary {
+  id: string;
+  name: string;
+  visit_count: number;
+  last_visit: string | null;
+}
+
+export interface ClientDetail {
+  client: { id: string; name: string; created_at: string };
+  visits: { id: string; date: string; rubric_count: number; remedy: string }[];
+}
+
+export interface Visit {
+  id: string;
+  client_id: string;
+  date: string;
+  rubrics: string[];
+  method: "symptoms" | "grades";
+  notes: string;
+  remedy: string;
+}
+
+export async function send<T>(method: "POST" | "PUT" | "PATCH" | "DELETE", path: string, data?: unknown, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    method,
+    headers: { accept: "application/json", "content-type": "application/json" },
+    body: data === undefined ? undefined : JSON.stringify(data),
+    ...init,
+  });
+  const body = (await res.json().catch(() => ({}))) as { error?: string };
+  if (!res.ok) throw new Error(body.error ?? `Request failed (${res.status})`);
+  return body as T;
+}

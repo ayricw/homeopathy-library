@@ -21,6 +21,13 @@
       "database_name": "homeopathy-library-local",
       "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
+    },
+    {
+      // Client records, kept apart from the library. Local testing uses made-up clients only.
+      "binding": "CLIENTS",
+      "database_name": "homeopathy-library-local-clients",
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "migrations-clients"
     }
   ],
   "r2_buckets": [{ "binding": "LIBRARY", "bucket_name": "homeopathy-library-local" }],
@@ -30,6 +37,7 @@
       "name": "homeopathy-library-dev",
       // Fails closed (refuses every request) until the Access secrets below are set.
       // Secrets: TEAM_DOMAIN, POLICY_AUD, ALLOWED_EMAILS (wrangler secret put <NAME> --env dev)
+      // Client records (made-up test clients only in dev): CLIENT_KEY, CLIENT_EMAILS
       "workers_dev": true,
       "preview_urls": false,
       "vars": { "ENVIRONMENT": "dev", "ALLOW_IMPORTS": "true" },
@@ -39,13 +47,21 @@
           "database_name": "homeopathy-library-dev",
           "database_id": "6383eec8-66b0-4b5c-852a-cfdb05a37364",
           "migrations_dir": "migrations"
+        },
+        {
+          "binding": "CLIENTS",
+          "database_name": "homeopathy-library-dev-clients",
+          "database_id": "REPLACE_WITH_DEV_CLIENTS_DATABASE_ID",
+          "migrations_dir": "migrations-clients"
         }
       ],
       "r2_buckets": [{ "binding": "LIBRARY", "bucket_name": "homeopathy-library-dev" }]
     },
     "production": {
       "name": "homeopathy-library-prod",
-      "workers_dev": false,
+      // Served on its workers.dev URL behind Cloudflare Access, like dev. Fails closed until the secrets are set.
+      // Secrets: TEAM_DOMAIN, POLICY_AUD, ALLOWED_EMAILS, CLIENT_KEY, CLIENT_EMAILS
+      "workers_dev": true,
       "preview_urls": false,
       "vars": { "ENVIRONMENT": "production", "ALLOW_IMPORTS": "false" },
       "d1_databases": [
@@ -54,6 +70,12 @@
           "database_name": "homeopathy-library-prod",
           "database_id": "REPLACE_WITH_PROD_DATABASE_ID",
           "migrations_dir": "migrations"
+        },
+        {
+          "binding": "CLIENTS",
+          "database_name": "homeopathy-library-prod-clients",
+          "database_id": "REPLACE_WITH_PROD_CLIENTS_DATABASE_ID",
+          "migrations_dir": "migrations-clients"
         }
       ],
       "r2_buckets": [{ "binding": "LIBRARY", "bucket_name": "homeopathy-library-prod" }]

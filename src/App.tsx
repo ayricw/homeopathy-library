@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { reflow } from "../shared/text";
 import { ImportPage } from "./ImportPage";
+import { ClientPage, ClientsPage, VisitPage } from "./ClientsPages";
 import { excerpt, formatReferences, groupBySource, isCollected, useCollected, type CollectedItem } from "./collect";
 import {
   ancestry,
@@ -12,6 +13,7 @@ import {
   tokenize,
   toRubric,
   MAX_CASE_RUBRICS,
+  type RankMethod,
   type RepertoryFile,
   type Rubric,
   type RubricTree,
@@ -20,7 +22,7 @@ import { get, post, type SymptomResponse, type PassageRef, type PassageResponse,
 
 // ---------- tiny hash router: #/search?q=..  #/passage/12  #/sources  #/sources/id ----------
 
-function useRoute() {
+export function useRoute() {
   const read = () => {
     const raw = window.location.hash.replace(/^#/, "") || "/search";
     const [path, query = ""] = raw.split("?");
@@ -35,12 +37,12 @@ function useRoute() {
   return route;
 }
 
-const go = (path: string, params?: Record<string, string>) => {
+export const go = (path: string, params?: Record<string, string>) => {
   const qs = params ? new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString() : "";
   window.location.hash = qs ? `${path}?${qs}` : path;
 };
 
-function useFetch<T>(path: string | null) {
+export function useFetch<T>(path: string | null) {
   const [state, setState] = useState<{ data?: T; error?: string; loading: boolean }>({ loading: !!path });
   useEffect(() => {
     if (!path) return setState({ loading: false });
@@ -58,10 +60,16 @@ function useFetch<T>(path: string | null) {
 
 // ---------- shared bits ----------
 
+export interface AppConfig {
+  environment: string;
+  allowImports: boolean;
+  clients: boolean;
+}
+
 export function App() {
   const { path, params } = useRoute();
   const collected = useCollected();
-  const config = useFetch<{ environment: string; allowImports: boolean }>("/api/config");
+  const config = useFetch<AppConfig>("/api/config");
   let page: ReactNode;
   let m: RegExpMatchArray | null;
   if ((m = path.match(/^\/passage\/(\d+)$/))) page = <PassagePage id={m[1]} q={params.get("q") ?? ""} />;
@@ -70,6 +78,9 @@ export function App() {
   else if (path === "/import") page = <ImportPage />;
   else if (path === "/collected") page = <CollectedPage />;
   else if (path === "/symptoms") page = <SymptomsPage />;
+  else if (path === "/clients") page = <ClientsPage config={config.data} />;
+  else if ((m = path.match(/^\/clients\/([0-9a-f-]{36})$/))) page = <ClientPage id={m[1]} config={config.data} />;
+  else if ((m = path.match(/^\/visits\/([0-9a-f-]{36})$/))) page = <VisitPage id={m[1]} config={config.data} />;
   else page = <SearchPage params={params} />;
 
   return (
@@ -80,6 +91,7 @@ export function App() {
         </a>
         <nav>
           <a href="#/search">Search</a>
+          {config.data?.clients && <a href="#/clients">Clients</a>}
           <a href="#/symptoms">Symptoms</a>
           <a href="#/sources">Sources</a>
           <a href="#/collected">Collected{collected.items.length > 0 && ` (${collected.items.length})`}</a>
@@ -95,7 +107,7 @@ export function App() {
   );
 }
 
-function Status({ loading, error }: { loading: boolean; error?: string }) {
+export function Status({ loading, error }: { loading: boolean; error?: string }) {
   if (error) return <p className="error">{error}</p>;
   if (loading) return <p className="muted">Loading…</p>;
   return null;
@@ -386,7 +398,7 @@ const caseMemory: {
   browseAt: null,
 };
 
-type LoadedRepertory = { data: RepertoryFile; tokens: string[][]; tree: RubricTree };
+export type LoadedRepertory = { data: RepertoryFile; tokens: string[][]; tree: RubricTree };
 
 // The repertory file is loaded once per page load and searched in the browser.
 let repertoryLoad: Promise<LoadedRepertory | null> | null = null;
@@ -405,7 +417,7 @@ function loadRepertory() {
   return repertoryLoad;
 }
 
-function useRepertory() {
+export function useRepertory() {
   const [state, setState] = useState<{ rep?: LoadedRepertory | null; error?: string }>({});
   useEffect(() => {
     let live = true;
@@ -445,7 +457,7 @@ function SymptomsPage() {
         ) : rep.rep === null ? (
           <p className="muted">No repertory is included in this deployment yet. See README.md for how to add one.</p>
         ) : (
-          <RepertoryCase data={rep.rep.data} tokens={rep.rep.tokens} tree={rep.rep.tree} />
+          <MemoryCase rep={rep.rep} />
         )
       ) : (
         <BookSymptoms />
@@ -470,9 +482,43 @@ function RubricRemedies({ data, id }: { data: RepertoryFile; id: number }) {
   );
 }
 
-function RepertoryCase({ data: rep, tokens, tree }: { data: RepertoryFile; tokens: string[][]; tree: RubricTree }) {
+/** The Symptoms page case: kept in page memory only. */
+function MemoryCase({ rep }: { rep: LoadedRepertory }) {
   const [rubrics, setRubricsState] = useState<Rubric[]>(caseMemory.rubrics);
   const [method, setMethodState] = useState(caseMemory.method);
+  return (
+    <RepertoryCase
+      rep={rep}
+      rubrics={rubrics}
+      setRubrics={(next) => {
+        caseMemory.rubrics = next;
+        setRubricsState(next);
+      }}
+      method={method}
+      setMethod={(m) => {
+        caseMemory.method = m;
+        setMethodState(m);
+      }}
+    />
+  );
+}
+
+export function RepertoryCase({
+  rep: { data: rep, tokens, tree },
+  rubrics,
+  setRubrics,
+  method,
+  setMethod,
+  saved = false,
+}: {
+  rep: LoadedRepertory;
+  rubrics: Rubric[];
+  setRubrics: (next: Rubric[]) => void;
+  method: RankMethod;
+  setMethod: (m: RankMethod) => void;
+  /** True on a client visit, where the case is saved to the client's record. */
+  saved?: boolean;
+}) {
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<number | null>(null);
@@ -487,14 +533,6 @@ function RepertoryCase({ data: rep, tokens, tree }: { data: RepertoryFile; token
     const path = n === null ? null : tree.nodes[n].path;
     caseMemory.browseAt = path;
     setBrowsePath(path);
-  };
-  const setRubrics = (next: Rubric[]) => {
-    caseMemory.rubrics = next;
-    setRubricsState(next);
-  };
-  const setMethod = (m: typeof method) => {
-    caseMemory.method = m;
-    setMethodState(m);
   };
   const found = useMemo(() => (query ? searchRubrics(rep, tokens, query, 40) : null), [rep, tokens, query]);
   // The case is kept by rubric id; drop any that no longer exist in a newer repertory file.
@@ -516,7 +554,8 @@ function RepertoryCase({ data: rep, tokens, tree }: { data: RepertoryFile; token
         <a href={rep.source.source_url} target="_blank" rel="noopener noreferrer" title={rep.source.reuse_terms}>
           {rep.source.title}
         </a>{" "}
-        ({rep.rubrics.length.toLocaleString()} rubrics). Everything here runs in your browser and nothing is saved. This shows what the repertory lists. It is not
+        ({rep.rubrics.length.toLocaleString()} rubrics).{" "}
+        {saved ? "The rubrics you add are saved to this visit, encrypted." : "Everything here runs in your browser and nothing is saved."} This shows what the repertory lists. It is not
         evidence that a remedy works and it is not a prescription.
       </p>
       <div className="tabs sub" role="tablist" aria-label="How to choose rubrics">
@@ -597,7 +636,7 @@ function RepertoryCase({ data: rep, tokens, tree }: { data: RepertoryFile; token
         <>
           <div className="controls">
             <label htmlFor="method">Rank by</label>
-            <select id="method" value={method} onChange={(e) => setMethod(e.target.value as typeof method)}>
+            <select id="method" value={method} onChange={(e) => setMethod(e.target.value as RankMethod)}>
               <option value="symptoms">Rubrics covered, then grades</option>
               <option value="grades">Total grade, then rubrics covered</option>
             </select>
