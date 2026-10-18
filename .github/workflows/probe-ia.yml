@@ -1,4 +1,4 @@
-# Temporary: inspects Internet Archive OCR file formats. Removed before merge.
+# Temporary: looks for candidate scanned books on the Internet Archive. Removed before merge.
 name: Probe IA
 on:
   push:
@@ -11,24 +11,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: |
-          set -x
-          ID=adictionaryprac01unkngoog
-          B=https://archive.org/download/$ID
-          curl -fsSL -o pn.json $B/${ID}_page_numbers.json
-          head -c 1500 pn.json; echo; python3 -c "import json;d=json.load(open('pn.json'));print(d.keys());p=d['pages'];print(len(p));print(p[:3]);print(p[40:45]);print([k for k in d if k!='pages'] and {k:d[k] for k in d if k!='pages'})"
-          curl -fsSL -o pi.json.gz $B/${ID}_hocr_pageindex.json.gz && zcat pi.json.gz | head -c 800; echo
-          zcat pi.json.gz | python3 -c "import json,sys;d=json.load(sys.stdin);print(type(d),len(d),d[:5],d[40:43])"
-          curl -fsSL -o st.txt.gz $B/${ID}_hocr_searchtext.txt.gz && zcat st.txt.gz | wc -c && zcat st.txt.gz | python3 -c "import sys;t=sys.stdin.read();print(len(t));print(repr(t[:1200]))"
-          zcat pi.json.gz > pi.json; zcat st.txt.gz > st.txt
           python3 - <<'PY'
-          import json
-          pi=json.load(open('pi.json')); t=open('st.txt',encoding='utf-8').read(); b=open('st.txt','rb').read()
-          for i in (40,41,200):
-              s,e=pi[i][0],pi[i][1]
-              print(i, pi[i], 'CHARS:', repr(t[s:e][:300]))
-              print(i, 'BYTES:', repr(b[s:e][:300].decode('utf-8','replace')))
+          import json, urllib.request, urllib.parse
+          queries = [
+            'title:(dictionary practical materia medica) AND creator:(clarke)',
+            'title:(lectures homoeopathic materia medica) AND creator:(kent)',
+            'title:(repertory homoeopathic materia medica) AND creator:(kent)',
+            'title:(pocket manual materia medica) AND creator:(boericke)',
+            'title:(keynotes) AND creator:(allen)',
+            'title:(leaders homoeopathic therapeutics) AND creator:(nash)',
+            'title:(guiding symptoms) AND creator:(hering)',
+            'title:(organon) AND creator:(hahnemann)',
+            'title:(chronic diseases) AND creator:(hahnemann)',
+            'title:(lectures homoeopathic philosophy) AND creator:(kent)',
+          ]
+          for q in queries:
+            u = 'https://archive.org/advancedsearch.php?' + urllib.parse.urlencode({'q': q + ' AND mediatype:texts', 'fl[]': ['identifier','title','year','volume','date'], 'rows': 12, 'output': 'json'}, doseq=True)
+            docs = json.load(urllib.request.urlopen(u))['response']['docs']
+            print('\n###', q, len(docs))
+            for d in docs:
+              ident = d['identifier']
+              try:
+                m = json.load(urllib.request.urlopen('https://archive.org/metadata/' + ident))
+              except Exception as e:
+                print('  ', ident, 'ERR', e); continue
+                continue
+              md = m.get('metadata', {})
+              names = {f['name'] for f in m.get('files', [])}
+              pn = ident + '_page_numbers.json' in names
+              st = ident + '_hocr_searchtext.txt.gz' in names
+              print('  ', ident, '|', md.get('title'), '|', md.get('volume'), '|', md.get('year') or md.get('date'), '|', md.get('possible-copyright-status'), '|', md.get('publisher'), '| pages', md.get('imagecount'), '| pn', pn, 'st', st, '| conf', md.get('page_number_confidence'))
           PY
-          curl -fsSL -o scan.xml $B/${ID}_scandata.xml && head -c 1500 scan.xml; echo
-          curl -fsSL -r 0-3000 $B/${ID}_djvu.xml; echo
-          curl -fsSL -o dj.txt $B/${ID}_djvu.txt && wc -c dj.txt && python3 -c "t=open('dj.txt',encoding='utf-8').read();print('formfeeds',t.count('\f'));print(repr(t[20000:21500]))"
-          curl -fsSL $B/${ID}_meta.xml

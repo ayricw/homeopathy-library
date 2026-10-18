@@ -23,6 +23,7 @@ export async function importText(
   metadata: Record<string, unknown>,
   events: ImportEvents = {},
   init: RequestInit = {},
+  extraIssues: Issue[] = [],
 ): Promise<ImportOutcome> {
   const call = async (path: string, opts: RequestInit) => {
     const res = await fetch(server + path, { ...init, ...opts, headers: { ...(init.headers ?? {}), ...(opts.headers ?? {}) } });
@@ -42,7 +43,9 @@ export async function importText(
 
   const decoded = decodeUtf8(file.bytes);
   if (!decoded.ok) return { kind: "failed", sourceId: created.sourceId, error: decoded.error! };
-  const { passages, issues } = splitPassages(decoded.text!);
+  const split = splitPassages(decoded.text!);
+  const { passages } = split;
+  const issues = [...extraIssues, ...split.issues];
   events.issues?.(issues);
 
   const resumedFrom = imp.processed_passages as number;
