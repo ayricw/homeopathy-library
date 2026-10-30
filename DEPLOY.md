@@ -31,6 +31,7 @@ To stop automatic deploys, delete either secret, or disable the workflow under *
 `.github/workflows/import-books.yml` adds the scanned books listed in `library/sources/` (the files with a `"scan"` entry). It builds each book's text from the Internet Archive's OCR, with `[Pg N]` markers only where the Internet Archive read a printed page number, then imports it the same way as the Import page, so the Worker checks every passage.
 
 - **A push to a branch that changes the book list:** preview only. The log shows each book's file hashes, leaf and page counts, headings and the start of the text. No secrets are used.
+- **Every night (about 2 a.m. Texas time):** imports the next listed book that dev doesn't have yet, one book per night. Once every listed book is in, the nightly run does nothing. GitHub pauses scheduled runs if the repository has no activity for 60 days; **Actions → Import books → Enable workflow** turns it back on.
 - **Actions → Import books → Run workflow:** imports into `dev` (or `production`, once it exists and `PROD_LIBRARY_URL` is set as a repository variable). Books already imported are skipped; an interrupted book resumes.
 - D1's free plan allows 100,000 rows written per day. A large book (one Clarke volume, about 2,500 passages plus the keyword index) uses a large share of that, so import one or two big books a day. If the limit is reached the run fails, and running it the next day resumes where it stopped.
 
