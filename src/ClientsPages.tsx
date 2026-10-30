@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { toRubric, type RankMethod, type Rubric } from "../shared/repertory";
 import { send, type ClientDetail, type ClientSummary, type Visit } from "./api";
+import { emptyVisit, MAX_ANSWER, VISIT_KINDS, type VisitKind } from "../shared/clients";
+import { FORMS, KIND_LABEL } from "./intake";
 import { go, RepertoryCase, Status, useFetch, useRepertory, type AppConfig, type LoadedRepertory } from "./App";
 
 // Client records. Names and visits are stored encrypted in the clients database by the Worker.
@@ -95,6 +97,9 @@ export function ClientsPage({ config }: { config?: AppConfig }) {
 export function ClientPage({ id, config }: { id: string; config?: AppConfig }) {
   const [reload, setReload] = useState(0);
   const detail = useFetch<ClientDetail>(config?.clients ? `/api/clients/${id}?r=${reload}` : null);
+  // A client's first visit is a full intake; later ones are follow-ups, unless another type is picked.
+  const [kind, setKind] = useState<VisitKind | null>(null);
+  const newKind = kind ?? (detail.data?.visits.length ? "followup" : "adult");
   const [rename, setRename] = useState<string | null>(null);
   const [date, setDate] = useState(today);
   const [error, setError] = useState<string>();
@@ -156,13 +161,21 @@ export function ClientPage({ id, config }: { id: string; config?: AppConfig }) {
             onSubmit={(e) => {
               e.preventDefault();
               void act(async () => {
-                const { id: visitId } = await send<{ id: string }>("POST", `/api/clients/${id}/visits`, { date });
+                const { id: visitId } = await send<{ id: string }>("POST", `/api/clients/${id}/visits`, { date, data: emptyVisit(newKind) });
                 go(`/visits/${visitId}`);
               });
             }}
           >
             <label htmlFor="visit-date">Visit date</label>
             <input id="visit-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+            <label htmlFor="new-visit-kind">Type</label>
+            <select id="new-visit-kind" value={newKind} onChange={(e) => setKind(e.target.value as VisitKind)}>
+              {VISIT_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {KIND_LABEL[k]}
+                </option>
+              ))}
+            </select>
             <button type="submit">Start a visit</button>
           </form>
           {error && <p className="error">{error}</p>}
@@ -176,7 +189,7 @@ export function ClientPage({ id, config }: { id: string; config?: AppConfig }) {
                 <li key={v.id}>
                   <a href={`#/visits/${v.id}`}>{v.date}</a>
                   <span className="muted">
-                    {v.rubric_count} rubric{v.rubric_count === 1 ? "" : "s"}
+                    {KIND_LABEL[v.kind ?? "acute"]} · {v.rubric_count} rubric{v.rubric_count === 1 ? "" : "s"}
                     {v.remedy ? ` · ${v.remedy}` : ""}
                   </span>
                 </li>
@@ -244,9 +257,11 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
   const [date, setDate] = useState(visit.date);
   const [notes, setNotes] = useState(visit.notes);
   const [remedy, setRemedy] = useState(visit.remedy);
+  const [kind, setKind] = useState<VisitKind>(visit.kind ?? "acute");
+  const [answers, setAnswers] = useState<Record<string, string>>(visit.answers ?? {});
   const [state, setState] = useState<SaveState>("saved");
 
-  const payload = { date, data: { rubrics: [...rubrics.map((r) => r.path), ...initial.missing], method, notes, remedy } };
+  const payload = { date, data: { rubrics: [...rubrics.map((r) => r.path), ...initial.missing], method, notes, remedy, kind, answers } };
   const pending = useRef<string | null>(null);
   const first = useRef(true);
   const serialized = JSON.stringify(payload);
@@ -302,28 +317,21 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
       <div className="controls">
         <label htmlFor="visit-date">Visit date</label>
         <input id="visit-date" type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} required />
+        <label htmlFor="visit-kind">Visit type</label>
+        <select id="visit-kind" value={kind} onChange={(e) => setKind(e.target.value as VisitKind)}>
+          {VISIT_KINDS.map((k) => (
+            <option key={k} value={k}>
+              {KIND_LABEL[k]}
+            </option>
+          ))}
+        </select>
       </div>
-      <h2>Case notes</h2>
-      <details className="casetaking" open={!notes.trim()}>
-        <summary>Casetaking questions</summary>
-        {CASETAKING.map(([heading, questions]) => (
-          <div key={heading}>
-            <h3>{heading}</h3>
-            <ul>
-              {questions.map((q) => (
-                <li key={q}>{q}</li>
-              ))}
-            </ul>
-          </div>
-        ))}
-        <button type="button" className="secondary" onClick={() => setNotes(notesOutline(notes))}>
-          Add these headings to the notes
-        </button>
-      </details>
+      <CaseForm kind={kind} answers={answers} setAnswer={(id, text) => setAnswers((a) => ({ ...a, [id]: text }))} />
+      <h2>Other notes</h2>
       <label htmlFor="visit-notes" className="visually-hidden">
-        Case notes
+        Other notes
       </label>
-      <textarea id="visit-notes" className="visit-notes" value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={20000} rows={16} />
+      <textarea id="visit-notes" className="visit-notes" value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={20000} rows={6} />
       <h2>Rubrics from the case</h2>
       {initial.missing.length > 0 && (
         <p className="warning">
@@ -355,20 +363,37 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
   );
 }
 
-// A general casetaking guide shown beside the notes. Nothing here is saved apart from what is typed into the notes.
-const CASETAKING: [string, string[]][] = [
-  ["Main complaint", ["What brings you in? Describe it in your own words.", "When did it start, and what was happening in your life then?", "Where exactly is it, and does it spread anywhere?", "What does it feel like (burning, stitching, pressing, throbbing…)?"]],
-  ["Better and worse", ["What makes it better or worse: time of day, heat or cold, weather, motion or rest, position, eating, company?"]],
-  ["Alongside it", ["What else happens at the same time as the complaint?"]],
-  ["Mind and emotions", ["How are you in yourself? Fears, worries, irritability, sadness, grief?", "How do you react to stress, consolation, being alone?"]],
-  ["Generals", ["Hot or chilly? Thirst, appetite, food cravings and aversions?", "Sleep, sleep position and dreams?", "Sweat, energy through the day?", "Menses, if relevant."]],
-  ["History", ["Past illnesses, injuries, vaccinations and treatments?", "Illnesses in the family?"]],
-];
 
-/** Adds each casetaking heading to the notes, skipping any already there. */
-function notesOutline(notes: string) {
-  const missing = CASETAKING.map(([h]) => h).filter((h) => !notes.includes(`${h}:`));
-  if (!missing.length) return notes;
-  const outline = missing.map((h) => `${h}:\n`).join("\n");
-  return notes.trim() ? `${notes.trimEnd()}\n\n${outline}` : outline;
+/** The visit's form: one block per section, each question with its own box. Sections fold away. */
+function CaseForm({ kind, answers, setAnswer }: { kind: VisitKind; answers: Record<string, string>; setAnswer: (id: string, text: string) => void }) {
+  return (
+    <div className="case-form">
+      {FORMS[kind].map((section) => {
+        const done = section.questions.filter((q) => answers[q.id]?.trim()).length;
+        return (
+          <details key={section.title} open>
+            <summary>
+              <h2>{section.title}</h2>
+              <span className="muted">
+                {done} of {section.questions.length}
+              </span>
+            </summary>
+            {section.questions.map((q) => (
+              <div key={q.id} className="question">
+                <label htmlFor={`q-${q.id}`}>{q.label}</label>
+                {q.hint && <p className="hint">{q.hint}</p>}
+                <textarea
+                  id={`q-${q.id}`}
+                  value={answers[q.id] ?? ""}
+                  onChange={(e) => setAnswer(q.id, e.target.value)}
+                  maxLength={MAX_ANSWER}
+                  rows={q.id === "sensation" || q.id === "main-complaint" ? 8 : 3}
+                />
+              </div>
+            ))}
+          </details>
+        );
+      })}
+    </div>
+  );
 }

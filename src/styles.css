@@ -234,8 +234,10 @@ button.danger { background: transparent; color: var(--danger); border: 1px solid
 .controls input { padding: 0.4rem 0.5rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
 #visit-remedy { flex: 1; min-width: 12rem; }
 .visit-notes { display: block; width: 100%; padding: 0.7rem 0.8rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: 15px/1.5 system-ui, sans-serif; resize: vertical; }
-.casetaking { margin: 0 0 0.75rem; padding: 0.5rem 0.8rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font: 14px/1.45 system-ui, sans-serif; }
-.casetaking summary { cursor: pointer; font-weight: 600; color: var(--accent); }
-.casetaking h3 { margin: 0.75rem 0 0.2rem; font-size: 14px; }
-.casetaking ul { margin: 0; padding-left: 1.2rem; color: var(--muted); }
-.casetaking button { margin: 0.75rem 0 0.25rem; }
+.case-form details { margin: 0 0 0.75rem; padding: 0.25rem 0.9rem 0.5rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.case-form summary { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; cursor: pointer; font: 13px/1.4 system-ui, sans-serif; }
+.case-form summary h2 { display: inline; margin: 0.4rem 0; font-size: 1.1rem; }
+.case-form .question { margin: 0.75rem 0; font: 14px/1.45 system-ui, sans-serif; }
+.case-form label { display: block; font-weight: 600; }
+.case-form .hint { margin: 0.1rem 0 0.3rem; color: var(--muted); font-size: 13px; }
+.case-form textarea { display: block; width: 100%; margin-top: 0.3rem; padding: 0.5rem 0.7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; resize: vertical; }
