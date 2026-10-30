@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "re
 import { reflow } from "../shared/text";
 import { ImportPage } from "./ImportPage";
 import { ClientPage, ClientsPage, VisitPage } from "./ClientsPages";
-import { MenuBar, type Menu } from "./MenuBar";
 import { excerpt, formatReferences, groupBySource, isCollected, useCollected, type CollectedItem } from "./collect";
 import {
   ancestry,
@@ -71,8 +70,6 @@ export function App() {
   const { path, params } = useRoute();
   const collected = useCollected();
   const config = useFetch<AppConfig>("/api/config");
-  // Bumped by each menu choice so a page opened from the menu starts on the tab the menu named.
-  const [opened, setOpened] = useState(0);
   let page: ReactNode;
   let m: RegExpMatchArray | null;
   if ((m = path.match(/^\/passage\/(\d+)$/))) page = <PassagePage id={m[1]} q={params.get("q") ?? ""} />;
@@ -80,7 +77,7 @@ export function App() {
   else if (path === "/sources") page = <SourcesPage />;
   else if (path === "/import") page = <ImportPage />;
   else if (path === "/collected") page = <CollectedPage />;
-  else if (path === "/symptoms") page = <SymptomsPage key={opened} />;
+  else if (path === "/symptoms") page = <SymptomsPage />;
   else if (path === "/clients") page = <ClientsPage config={config.data} />;
   else if ((m = path.match(/^\/clients\/([0-9a-f-]{36})$/))) page = <ClientPage id={m[1]} config={config.data} />;
   else if ((m = path.match(/^\/visits\/([0-9a-f-]{36})$/))) page = <VisitPage id={m[1]} config={config.data} />;
@@ -92,7 +89,14 @@ export function App() {
         <a className="brand" href="#/search">
           Homeopathy Library
         </a>
-        <MenuBar menus={menus(config.data, collected.items.length)} path={path} onNavigate={() => setOpened((n) => n + 1)} />
+        <nav>
+          <a href="#/search">Search</a>
+          {config.data?.clients && <a href="#/clients">Clients</a>}
+          <a href="#/symptoms">Symptoms</a>
+          <a href="#/sources">Sources</a>
+          <a href="#/collected">Collected{collected.items.length > 0 && ` (${collected.items.length})`}</a>
+          {config.data?.allowImports && <a href="#/import">Import</a>}
+        </nav>
       </header>
       <main>{page}</main>
       <footer className="notice">
@@ -101,65 +105,6 @@ export function App() {
       </footer>
     </>
   );
-}
-
-/** Opens the Symptoms page on a given tab, keeping the case already built there. */
-const symptoms = (tab: typeof caseMemory.tab, mode?: typeof caseMemory.mode) => () => {
-  caseMemory.tab = tab;
-  if (mode) caseMemory.mode = mode;
-};
-
-function menus(config: AppConfig | undefined, collected: number): Menu[] {
-  const list: Menu[] = [];
-  if (config?.clients)
-    list.push({
-      label: "Clients",
-      items: [{ label: "All clients", href: "#/clients", hint: "Open a client, start or continue a visit" }],
-    });
-  list.push(
-    {
-      label: "Repertory",
-      items: [
-        {
-          label: "Browse by body area",
-          href: "#/symptoms",
-          hint: "Step down from a chapter, e.g. Ear, then pain, then burning",
-          onPick: symptoms("repertory", "browse"),
-        },
-        {
-          label: "Find a rubric by words",
-          href: "#/symptoms",
-          hint: "Type words from the rubric",
-          onPick: symptoms("repertory", "find"),
-        },
-        {
-          label: "Symptoms in the books",
-          href: "#/symptoms",
-          hint: "List symptoms and see which remedy passages mention them",
-          onPick: symptoms("books"),
-        },
-      ],
-    },
-    {
-      label: "Library",
-      items: [
-        { label: "Search the books", href: "#/search", hint: "Keyword search across every passage" },
-        { label: "Books and sources", href: "#/sources", hint: "Every book in the library and where it came from" },
-        {
-          label: "Collected passages",
-          href: "#/collected",
-          hint: "Passages you pinned, with references",
-          badge: collected > 0 ? String(collected) : undefined,
-        },
-      ],
-    },
-  );
-  if (config?.allowImports)
-    list.push({
-      label: "Tools",
-      items: [{ label: "Import a book", href: "#/import", hint: "Add a checked plain-text book" }],
-    });
-  return list;
 }
 
 export function Status({ loading, error }: { loading: boolean; error?: string }) {
