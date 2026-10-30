@@ -303,6 +303,28 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
         <label htmlFor="visit-date">Visit date</label>
         <input id="visit-date" type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} required />
       </div>
+      <h2>Case notes</h2>
+      <details className="casetaking" open={!notes.trim()}>
+        <summary>Casetaking questions</summary>
+        {CASETAKING.map(([heading, questions]) => (
+          <div key={heading}>
+            <h3>{heading}</h3>
+            <ul>
+              {questions.map((q) => (
+                <li key={q}>{q}</li>
+              ))}
+            </ul>
+          </div>
+        ))}
+        <button type="button" className="secondary" onClick={() => setNotes(notesOutline(notes))}>
+          Add these headings to the notes
+        </button>
+      </details>
+      <label htmlFor="visit-notes" className="visually-hidden">
+        Case notes
+      </label>
+      <textarea id="visit-notes" className="visit-notes" value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={20000} rows={16} />
+      <h2>Rubrics from the case</h2>
       {initial.missing.length > 0 && (
         <p className="warning">
           {initial.missing.length} rubric{initial.missing.length === 1 ? " is" : "s are"} not in the current repertory and{" "}
@@ -310,11 +332,6 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
         </p>
       )}
       <RepertoryCase rep={rep} rubrics={rubrics} setRubrics={setRubrics} method={method} setMethod={setMethod} saved />
-      <h2>Notes</h2>
-      <label htmlFor="visit-notes" className="visually-hidden">
-        Notes
-      </label>
-      <textarea id="visit-notes" className="visit-notes" value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={20000} rows={8} />
       <div className="controls">
         <label htmlFor="visit-remedy">Remedy chosen</label>
         <input id="visit-remedy" value={remedy} onChange={(e) => setRemedy(e.target.value)} maxLength={200} autoComplete="off" />
@@ -336,4 +353,22 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
       </p>
     </>
   );
+}
+
+// A general casetaking guide shown beside the notes. Nothing here is saved apart from what is typed into the notes.
+const CASETAKING: [string, string[]][] = [
+  ["Main complaint", ["What brings you in? Describe it in your own words.", "When did it start, and what was happening in your life then?", "Where exactly is it, and does it spread anywhere?", "What does it feel like (burning, stitching, pressing, throbbing…)?"]],
+  ["Better and worse", ["What makes it better or worse: time of day, heat or cold, weather, motion or rest, position, eating, company?"]],
+  ["Alongside it", ["What else happens at the same time as the complaint?"]],
+  ["Mind and emotions", ["How are you in yourself? Fears, worries, irritability, sadness, grief?", "How do you react to stress, consolation, being alone?"]],
+  ["Generals", ["Hot or chilly? Thirst, appetite, food cravings and aversions?", "Sleep, sleep position and dreams?", "Sweat, energy through the day?", "Menses, if relevant."]],
+  ["History", ["Past illnesses, injuries, vaccinations and treatments?", "Illnesses in the family?"]],
+];
+
+/** Adds each casetaking heading to the notes, skipping any already there. */
+function notesOutline(notes: string) {
+  const missing = CASETAKING.map(([h]) => h).filter((h) => !notes.includes(`${h}:`));
+  if (!missing.length) return notes;
+  const outline = missing.map((h) => `${h}:\n`).join("\n");
+  return notes.trim() ? `${notes.trimEnd()}\n\n${outline}` : outline;
 }
