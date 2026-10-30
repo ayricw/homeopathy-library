@@ -150,12 +150,20 @@ async function main() {
   }
   const init: RequestInit = { headers };
   const existing = await alreadyImported(server, init);
+  // MAX_BOOKS limits how many books one run imports (the nightly run takes one, to stay under D1's daily write limit).
+  const maxBooks = Number(process.env.MAX_BOOKS) || Infinity;
+  let attempted = 0;
   let failed = 0;
   for (const s of sources) {
     if (existing.get(s.id) === "complete") {
       console.log(`${s.id}: already imported, skipped.`);
       continue;
     }
+    if (attempted >= maxBooks) {
+      console.log(`${s.id}: left for a later run (MAX_BOOKS=${maxBooks}).`);
+      continue;
+    }
+    attempted++;
     console.log(`${s.id}: building text from ${s.scan.archive_id}`);
     const built = await build(s, true);
     const outcome = await importText(
@@ -178,6 +186,7 @@ async function main() {
     } else if (outcome.kind === "duplicate") console.log(`${s.id}: this exact text is already imported as "${outcome.sourceId}".`);
     else console.log(`${s.id}: imported, ${outcome.passages} passages.`);
   }
+  if (!attempted) console.log("Every listed book is already imported.");
   if (failed) process.exit(1);
 }
 

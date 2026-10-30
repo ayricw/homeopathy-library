@@ -2,6 +2,8 @@
 #   - A push to any branch other than main that changes the book list: preview only. Builds each
 #     book's text and prints its file hashes, page numbers and a sample to the log. Needs no secrets.
 #   - "Run workflow" on the Actions tab: import into dev or production.
+#   - Every night: imports the next listed book that dev doesn't have yet, one per night to stay under
+#     D1's free daily write limit. Does nothing once every book is in.
 # Imports sign in with a Cloudflare Access service token (repository secrets CF_ACCESS_CLIENT_ID and
 # CF_ACCESS_CLIENT_SECRET; see DEPLOY.md). The Worker lets that token use only the import API.
 name: Import books
@@ -10,6 +12,8 @@ on:
   push:
     branches-ignore: [main]
     paths: [library/sources/**, shared/ocr.ts, scripts/import-scans.ts]
+  schedule:
+    - cron: "0 8 * * *" # 08:00 UTC, about 2-3 a.m. in Texas
   workflow_dispatch:
     inputs:
       target:
@@ -26,7 +30,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: import-books-${{ inputs.target || 'preview' }}
+  group: import-books-${{ github.event_name == 'push' && 'preview' || inputs.target || 'dev' }}
   cancel-in-progress: false
 
 jobs:
@@ -43,7 +47,7 @@ jobs:
       - run: npm run scans -- preview
 
   import:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     env:
       CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
@@ -51,6 +55,7 @@ jobs:
       # The production address is set as the repository variable PROD_LIBRARY_URL once production exists.
       LIBRARY_URL: ${{ inputs.target == 'production' && vars.PROD_LIBRARY_URL || 'https://homeopathy-library-dev.aw-631.workers.dev' }}
       BOOKS: ${{ inputs.books }}
+      MAX_BOOKS: ${{ github.event_name == 'schedule' && '1' || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
