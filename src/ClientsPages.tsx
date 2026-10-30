@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { toRubric, type RankMethod, type Rubric } from "../shared/repertory";
 import { send, type ClientDetail, type ClientSummary, type Visit } from "./api";
+import { emptyVisit, MAX_ANSWER, VISIT_KINDS, type VisitKind } from "../shared/clients";
+import { FORMS, KIND_LABEL, OPTION_SEPARATOR, type Question } from "./intake";
 import { go, RepertoryCase, Status, useFetch, useRepertory, type AppConfig, type LoadedRepertory } from "./App";
 
 // Client records. Names and visits are stored encrypted in the clients database by the Worker.
@@ -95,6 +97,9 @@ export function ClientsPage({ config }: { config?: AppConfig }) {
 export function ClientPage({ id, config }: { id: string; config?: AppConfig }) {
   const [reload, setReload] = useState(0);
   const detail = useFetch<ClientDetail>(config?.clients ? `/api/clients/${id}?r=${reload}` : null);
+  // A client's first visit is a full intake; later ones are follow-ups, unless another type is picked.
+  const [kind, setKind] = useState<VisitKind | null>(null);
+  const newKind = kind ?? (detail.data?.visits.length ? "followup" : "adult");
   const [rename, setRename] = useState<string | null>(null);
   const [date, setDate] = useState(today);
   const [error, setError] = useState<string>();
@@ -156,13 +161,21 @@ export function ClientPage({ id, config }: { id: string; config?: AppConfig }) {
             onSubmit={(e) => {
               e.preventDefault();
               void act(async () => {
-                const { id: visitId } = await send<{ id: string }>("POST", `/api/clients/${id}/visits`, { date });
+                const { id: visitId } = await send<{ id: string }>("POST", `/api/clients/${id}/visits`, { date, data: emptyVisit(newKind) });
                 go(`/visits/${visitId}`);
               });
             }}
           >
             <label htmlFor="visit-date">Visit date</label>
             <input id="visit-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+            <label htmlFor="new-visit-kind">Type</label>
+            <select id="new-visit-kind" value={newKind} onChange={(e) => setKind(e.target.value as VisitKind)}>
+              {VISIT_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {KIND_LABEL[k]}
+                </option>
+              ))}
+            </select>
             <button type="submit">Start a visit</button>
           </form>
           {error && <p className="error">{error}</p>}
@@ -176,7 +189,7 @@ export function ClientPage({ id, config }: { id: string; config?: AppConfig }) {
                 <li key={v.id}>
                   <a href={`#/visits/${v.id}`}>{v.date}</a>
                   <span className="muted">
-                    {v.rubric_count} rubric{v.rubric_count === 1 ? "" : "s"}
+                    {KIND_LABEL[v.kind ?? "acute"]} · {v.rubric_count} rubric{v.rubric_count === 1 ? "" : "s"}
                     {v.remedy ? ` · ${v.remedy}` : ""}
                   </span>
                 </li>
@@ -244,9 +257,11 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
   const [date, setDate] = useState(visit.date);
   const [notes, setNotes] = useState(visit.notes);
   const [remedy, setRemedy] = useState(visit.remedy);
+  const [kind, setKind] = useState<VisitKind>(visit.kind ?? "acute");
+  const [answers, setAnswers] = useState<Record<string, string>>(visit.answers ?? {});
   const [state, setState] = useState<SaveState>("saved");
 
-  const payload = { date, data: { rubrics: [...rubrics.map((r) => r.path), ...initial.missing], method, notes, remedy } };
+  const payload = { date, data: { rubrics: [...rubrics.map((r) => r.path), ...initial.missing], method, notes, remedy, kind, answers } };
   const pending = useRef<string | null>(null);
   const first = useRef(true);
   const serialized = JSON.stringify(payload);
@@ -302,7 +317,22 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
       <div className="controls">
         <label htmlFor="visit-date">Visit date</label>
         <input id="visit-date" type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} required />
+        <label htmlFor="visit-kind">Visit type</label>
+        <select id="visit-kind" value={kind} onChange={(e) => setKind(e.target.value as VisitKind)}>
+          {VISIT_KINDS.map((k) => (
+            <option key={k} value={k}>
+              {KIND_LABEL[k]}
+            </option>
+          ))}
+        </select>
       </div>
+      <CaseForm kind={kind} answers={answers} setAnswer={(id, text) => setAnswers((a) => ({ ...a, [id]: text }))} />
+      <h2>Other notes</h2>
+      <label htmlFor="visit-notes" className="visually-hidden">
+        Other notes
+      </label>
+      <textarea id="visit-notes" className="visit-notes" value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={20000} rows={6} />
+      <h2>Rubrics from the case</h2>
       {initial.missing.length > 0 && (
         <p className="warning">
           {initial.missing.length} rubric{initial.missing.length === 1 ? " is" : "s are"} not in the current repertory and{" "}
@@ -310,11 +340,6 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
         </p>
       )}
       <RepertoryCase rep={rep} rubrics={rubrics} setRubrics={setRubrics} method={method} setMethod={setMethod} saved />
-      <h2>Notes</h2>
-      <label htmlFor="visit-notes" className="visually-hidden">
-        Notes
-      </label>
-      <textarea id="visit-notes" className="visit-notes" value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={20000} rows={8} />
       <div className="controls">
         <label htmlFor="visit-remedy">Remedy chosen</label>
         <input id="visit-remedy" value={remedy} onChange={(e) => setRemedy(e.target.value)} maxLength={200} autoComplete="off" />
@@ -335,5 +360,78 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
         </button>
       </p>
     </>
+  );
+}
+
+
+/** The visit's form: one block per section, each question with its own box or tick list. Sections fold away. */
+function CaseForm({ kind, answers, setAnswer }: { kind: VisitKind; answers: Record<string, string>; setAnswer: (id: string, text: string) => void }) {
+  const answered = (q: Question, from = answers) => !!(from[q.id]?.trim() || from[`${q.id}-more`]?.trim());
+  // Folded sections open if they had answers when the visit was opened; after that they open and close only by hand.
+  const [loaded] = useState(answers);
+  return (
+    <div className="case-form">
+      {FORMS[kind].map((section) => (
+        <details key={section.title} open={!section.folded || section.questions.some((q) => answered(q, loaded))}>
+          <summary>
+            <h2>{section.title}</h2>
+            <span className="muted">
+              {section.questions.filter((q) => answered(q)).length} of {section.questions.length}
+            </span>
+          </summary>
+          {section.questions.map((q) => (
+            <div key={q.id} className="question">
+              {q.options ? (
+                <TickList question={q} value={answers[q.id] ?? ""} more={answers[`${q.id}-more`] ?? ""} setAnswer={setAnswer} />
+              ) : (
+                <>
+                  <label htmlFor={`q-${q.id}`}>{q.label}</label>
+                  {q.hint && <p className="hint">{q.hint}</p>}
+                  <textarea
+                    id={`q-${q.id}`}
+                    value={answers[q.id] ?? ""}
+                    onChange={(e) => setAnswer(q.id, e.target.value)}
+                    maxLength={MAX_ANSWER}
+                    rows={q.long ? 7 : 2}
+                  />
+                </>
+              )}
+            </div>
+          ))}
+        </details>
+      ))}
+    </div>
+  );
+}
+
+function TickList({ question: q, value, more, setAnswer }: { question: Question; value: string; more: string; setAnswer: (id: string, text: string) => void }) {
+  const ticked = value ? value.split(OPTION_SEPARATOR) : [];
+  // Ticks saved under an option that has since been renamed or removed stay in the answer and are shown too.
+  const shown = [...q.options!, ...ticked.filter((t) => !q.options!.includes(t))];
+  const toggle = (o: string) =>
+    setAnswer(q.id, shown.filter((x) => (x === o ? !ticked.includes(o) : ticked.includes(x))).join(OPTION_SEPARATOR));
+  return (
+    <fieldset>
+      <legend>{q.label}</legend>
+      {q.hint && <p className="hint">{q.hint}</p>}
+      <div className="ticks">
+        {shown.map((o) => (
+          <button key={o} type="button" aria-pressed={ticked.includes(o)} onClick={() => toggle(o)}>
+            {o}
+          </button>
+        ))}
+      </div>
+      <label htmlFor={`q-${q.id}-more`} className="visually-hidden">
+        {q.label}: details
+      </label>
+      <textarea
+        id={`q-${q.id}-more`}
+        placeholder="Details, other, or how strongly"
+        value={more}
+        onChange={(e) => setAnswer(`${q.id}-more`, e.target.value)}
+        maxLength={MAX_ANSWER}
+        rows={1}
+      />
+    </fieldset>
   );
 }

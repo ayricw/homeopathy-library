@@ -1,3 +1,4 @@
+import type { VisitKind } from "../shared/clients";
 export interface Source {
   id: string;
   title: string;
@@ -95,7 +96,7 @@ export interface ClientSummary {
 
 export interface ClientDetail {
   client: { id: string; name: string; created_at: string };
-  visits: { id: string; date: string; rubric_count: number; remedy: string }[];
+  visits: { id: string; date: string; rubric_count: number; remedy: string; kind: VisitKind }[];
 }
 
 export interface Visit {
@@ -106,6 +107,8 @@ export interface Visit {
   method: "symptoms" | "grades";
   notes: string;
   remedy: string;
+  kind?: VisitKind;
+  answers?: Record<string, string>;
 }
 
 export async function send<T>(method: "POST" | "PUT" | "PATCH" | "DELETE", path: string, data?: unknown, init?: RequestInit): Promise<T> {

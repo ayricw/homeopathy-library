@@ -128,7 +128,7 @@ export async function routeClients(request: Request, url: URL, env: ClientsEnv, 
     const id = m[1];
     if (method === "GET") {
       const client = await getClient(id);
-      const visits = (await clientVisits(id)).map((v) => ({ id: v.id, date: v.date, rubric_count: v.rubrics.length, remedy: v.remedy }));
+      const visits = (await clientVisits(id)).map((v) => ({ id: v.id, date: v.date, rubric_count: v.rubrics.length, remedy: v.remedy, kind: v.kind ?? "acute" }));
       return json({ client, visits });
     }
     if (method === "PATCH") {

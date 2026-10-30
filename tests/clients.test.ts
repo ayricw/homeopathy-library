@@ -49,8 +49,16 @@ describe("client record validation", () => {
   it("checks visits and drops repeated rubrics", () => {
     expect(cleanVisit({ rubrics: ["Ear, pain", "Ear, pain "], notes: "n", remedy: " Puls. " })).toEqual({
       ok: true,
-      value: { rubrics: ["Ear, pain"], method: "symptoms", notes: "n", remedy: "Puls." },
+      value: { rubrics: ["Ear, pain"], method: "symptoms", notes: "n", remedy: "Puls.", kind: "acute", answers: {} },
     });
+    expect(cleanVisit({ kind: "adult", answers: { "main-complaint": "x", empty: "  " } })).toMatchObject({
+      ok: true,
+      value: { kind: "adult", answers: { "main-complaint": "x" } },
+    });
+    expect(cleanVisit({ kind: "other" }).ok).toBe(false);
+    expect(cleanVisit({ answers: { "Bad Id": "x" } }).ok).toBe(false);
+    expect(cleanVisit({ answers: { a: "x".repeat(10_001) } }).ok).toBe(false);
+    expect(cleanVisit({ answers: ["x"] }).ok).toBe(false);
     expect(cleanVisit({ rubrics: [1] }).ok).toBe(false);
     expect(cleanVisit({ method: "other" }).ok).toBe(false);
     expect(cleanVisit({ rubrics: Array.from({ length: MAX_VISIT_RUBRICS + 1 }, (_, i) => `R${i}`) }).ok).toBe(false);

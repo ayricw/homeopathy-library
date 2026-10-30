@@ -8,6 +8,12 @@ export const MAX_NOTES = 20_000;
 export const MAX_REMEDY = 200;
 export const MAX_VISIT_RUBRICS = 40;
 export const MAX_RUBRIC_PATH = 500;
+export const MAX_ANSWER = 10_000;
+export const MAX_ANSWERS_TOTAL = 150_000;
+
+/** The kinds of visit; each has its own form (src/intake.ts). Visits saved before kinds existed are acute. */
+export const VISIT_KINDS = ["adult", "child", "followup", "acute"] as const;
+export type VisitKind = (typeof VISIT_KINDS)[number];
 
 export interface VisitData {
   /** Rubric paths, e.g. "Ear, pain, burning". Paths, not ids, so a rebuilt repertory file still matches. */
@@ -15,6 +21,9 @@ export interface VisitData {
   method: "symptoms" | "grades";
   notes: string;
   remedy: string;
+  kind: VisitKind;
+  /** Answers to the visit form, by question id. Answers to another kind's form are kept if the kind is changed. */
+  answers: Record<string, string>;
 }
 
 const enc = new TextEncoder();
@@ -88,7 +97,20 @@ export function cleanVisit(input: unknown): Result<VisitData> {
   if (typeof notes !== "string" || notes.length > MAX_NOTES) return { ok: false, error: `Notes can be at most ${MAX_NOTES.toLocaleString()} characters.` };
   const remedy = v.remedy ?? "";
   if (typeof remedy !== "string" || remedy.length > MAX_REMEDY) return { ok: false, error: `The remedy can be at most ${MAX_REMEDY} characters.` };
-  return { ok: true, value: { rubrics: unique, method, notes, remedy: remedy.trim() } };
+  const kind = v.kind ?? "acute";
+  if (!(VISIT_KINDS as readonly unknown[]).includes(kind)) return { ok: false, error: "Unknown visit type." };
+  const raw = v.answers ?? {};
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { ok: false, error: "Answers must be an object." };
+  const answers: Record<string, string> = {};
+  let total = 0;
+  for (const [id, text] of Object.entries(raw)) {
+    if (!/^[a-z0-9-]{1,40}$/.test(id) || typeof text !== "string") return { ok: false, error: "Answers are not in the expected form." };
+    if (text.length > MAX_ANSWER) return { ok: false, error: `Each answer can be at most ${MAX_ANSWER.toLocaleString()} characters.` };
+    total += text.length;
+    if (text.trim()) answers[id] = text;
+  }
+  if (total > MAX_ANSWERS_TOTAL) return { ok: false, error: `The form can hold at most ${MAX_ANSWERS_TOTAL.toLocaleString()} characters.` };
+  return { ok: true, value: { rubrics: unique, method, notes, remedy: remedy.trim(), kind: kind as VisitKind, answers } };
 }
 
-export const emptyVisit = (): VisitData => ({ rubrics: [], method: "symptoms", notes: "", remedy: "" });
+export const emptyVisit = (kind: VisitKind = "acute"): VisitData => ({ rubrics: [], method: "symptoms", notes: "", remedy: "", kind, answers: {} });
