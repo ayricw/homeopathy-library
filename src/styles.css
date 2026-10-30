@@ -395,3 +395,12 @@ main:has(> .home) { max-width: 64rem; }
   .top nav a { padding: 0.35rem 0.7rem; font-size: 14px; }
   h1 { font-size: 1.55rem; }
 }
+
+/* ---------- suggested rubrics ---------- */
+.suggested { margin: 1.5rem 0; padding: 1rem 1.25rem; border: 1px solid color-mix(in srgb, var(--brass) 45%, var(--border)); border-radius: 16px; background: color-mix(in srgb, var(--brass) 6%, var(--surface)); box-shadow: var(--shadow); }
+.suggested h2 { margin: 0 0 0.25rem; font-size: 1.2rem; }
+.suggest-list { list-style: none; margin: 0.75rem 0; padding: 0; font: 14px/1.4 var(--ui); }
+.suggest-list li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.55rem 0; border-top: 1px solid var(--border); }
+.suggest-path { font-weight: 600; }
+.suggest-from { display: block; color: var(--muted); font-size: 12.5px; }
+.suggest-list button { flex: none; padding: 0.35rem 0.9rem; font-size: 13px; }
