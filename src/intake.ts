@@ -114,7 +114,7 @@ const TRAITS = [
   "Thrifty", "Generous", "Romantic", "Religious or spiritual", "Loves animals", "Loves music", "Loves dancing",
 ];
 
-const CONSOLATION = ["Better from consolation", "Worse from consolation", "Dislikes being fussed over", "Wants to be held", "Wants to talk it through", "Wants to be left alone"];
+const CONSOLATION = ["Better from consolation", "More affectionate", "Less affectionate", "Worse from consolation", "Dislikes being fussed over", "Wants to be held", "Wants to talk it through", "Wants to be left alone"];
 
 const OBSERVED = ["Chilly", "Warm", "Restless", "Still", "Talkative", "Reserved", "Weepy", "Laughs a lot", "Hurried speech", "Slow speech", "Precise", "Vague", "Animated gestures", "Guarded", "Warm and open", "Tidy appearance", "Untidy appearance"];
 
@@ -261,6 +261,8 @@ const ADULT: Section[] = [
     title: "Medical history",
     questions: [
       { id: "past-illnesses", label: "Past illnesses", options: PAST_ILLNESSES },
+      { id: "pain", label: "Recurrent pain", hint: "Location, quality, what makes it worse and what relieves it." },
+      { id: "acutes", label: "How often they get sick", hint: "Fevers, colds, flu. Describe a typical acute illness." },
       { id: "history", label: "Other illnesses and diagnoses", hint: "With dates. Any illness had twice or very severely; skin eruptions treated with creams.", long: true },
       { id: "surgeries", label: "Surgeries, hospital stays, anaesthesia" },
       { id: "injuries", label: "Accidents and injuries", hint: "Head injuries, loss of consciousness, major bleeding." },
@@ -375,6 +377,9 @@ const CHILD: Section[] = [
     questions: [
       { id: "past-illnesses", label: "Past illnesses", options: PAST_ILLNESSES },
       { id: "recurring", label: "Recurring conditions", hint: "Coughs, chest infections, tonsillitis, ear infections, stomach complaints." },
+      { id: "acutes", label: "Illnesses in the past year", hint: "Fevers, colds, flus. Describe a typical one." },
+      { id: "pain", label: "Pain", hint: "Headaches, stomach aches, other. Sensitive to pain? If you imagine you are them, what does it feel like?" },
+      { id: "diet", label: "Special diet", hint: "Has a change of diet made a difference?" },
       { id: "medications", label: "Current supplements and medications" },
       { id: "long-term-meds", label: "Tylenol, antibiotics or other medicines in the past", hint: "When and for how long; cortisone creams for skin." },
       { id: "childhood-diseases", label: "Childhood diseases with severe symptoms", hint: "Measles, chicken pox, croup, mumps, whooping cough…" },
