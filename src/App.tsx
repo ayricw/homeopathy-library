@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { reflow } from "../shared/text";
 import { ImportPage } from "./ImportPage";
+import { HomePage, Logo } from "./HomePage";
 import { ClientPage, ClientsPage, VisitPage } from "./ClientsPages";
 import { excerpt, formatReferences, groupBySource, isCollected, useCollected, type CollectedItem } from "./collect";
 import {
@@ -24,7 +25,7 @@ import { get, post, type SymptomResponse, type PassageRef, type PassageResponse,
 
 export function useRoute() {
   const read = () => {
-    const raw = window.location.hash.replace(/^#/, "") || "/search";
+    const raw = window.location.hash.replace(/^#/, "") || "/";
     const [path, query = ""] = raw.split("?");
     return { path, params: new URLSearchParams(query) };
   };
@@ -81,21 +82,41 @@ export function App() {
   else if (path === "/clients") page = <ClientsPage config={config.data} />;
   else if ((m = path.match(/^\/clients\/([0-9a-f-]{36})$/))) page = <ClientPage id={m[1]} config={config.data} />;
   else if ((m = path.match(/^\/visits\/([0-9a-f-]{36})$/))) page = <VisitPage id={m[1]} config={config.data} />;
-  else page = <SearchPage params={params} />;
+  else if (path === "/search") page = <SearchPage params={params} />;
+  else page = <HomePage config={config.data} collected={collected.items.length} />;
+  const section = (p: string) => (path === p || path.startsWith(`${p}/`) ? "page" : undefined);
+  const inClients = path.startsWith("/clients") || path.startsWith("/visits");
 
   return (
     <>
       <header className="top">
-        <a className="brand" href="#/search">
+        <a className="brand" href="#/">
+          <Logo />
           Homeopathy Library
         </a>
         <nav>
-          <a href="#/search">Search</a>
-          {config.data?.clients && <a href="#/clients">Clients</a>}
-          <a href="#/symptoms">Symptoms</a>
-          <a href="#/sources">Sources</a>
-          <a href="#/collected">Collected{collected.items.length > 0 && ` (${collected.items.length})`}</a>
-          {config.data?.allowImports && <a href="#/import">Import</a>}
+          <a href="#/search" aria-current={section("/search") ?? (path.startsWith("/passage") ? "page" : undefined)}>
+            Search
+          </a>
+          {config.data?.clients && (
+            <a href="#/clients" aria-current={inClients ? "page" : undefined}>
+              Clients
+            </a>
+          )}
+          <a href="#/symptoms" aria-current={section("/symptoms")}>
+            Symptoms
+          </a>
+          <a href="#/sources" aria-current={section("/sources")}>
+            Sources
+          </a>
+          <a href="#/collected" aria-current={section("/collected")}>
+            Collected{collected.items.length > 0 && <span className="count-pill">{collected.items.length}</span>}
+          </a>
+          {config.data?.allowImports && (
+            <a href="#/import" aria-current={section("/import")}>
+              Import
+            </a>
+          )}
         </nav>
       </header>
       <main>{page}</main>
