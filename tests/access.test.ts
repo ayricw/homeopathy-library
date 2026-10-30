@@ -55,4 +55,12 @@ describe("checkAccess", () => {
       .sign(privateKey);
     expect(await checkAccess(req(forged), config, keys)).toMatchObject({ ok: false, status: 403 });
   });
+  it("accepts only listed service tokens, identified by their client ID", async () => {
+    const svc = { ...config, IMPORT_SERVICE_TOKENS: "abc123.access" };
+    expect(await checkAccess(req(await sign({ common_name: "abc123.access", sub: "" })), svc, keys)).toEqual({ ok: true, email: null, service: "abc123.access" });
+    expect(await checkAccess(req(await sign({ common_name: "other.access", sub: "" })), svc, keys)).toMatchObject({ ok: false, status: 403 });
+    expect(await checkAccess(req(await sign({ common_name: "abc123.access", sub: "" })), config, keys)).toMatchObject({ ok: false, status: 403 });
+    // A user token never counts as a service token, even with a matching common_name.
+    expect(await checkAccess(req(await sign({ common_name: "abc123.access", sub: "user-1" })), svc, keys)).toMatchObject({ ok: false, status: 403 });
+  });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isRemedyHeading, MAX_SYMPTOMS, parseSymptoms, rankRemedies, remedyKey, type HeadingHits } from "../shared/symptoms";
+import { isRemedyHeading, MAX_SYMPTOMS, parseSymptoms, rankRemedies, remedyKey, remedyLabel, type HeadingHits } from "../shared/symptoms";
 
 const hit = (symptom: number, heading: string, hits = 1, first_passage = 10, source_id = "a"): HeadingHits => ({ symptom, source_id, heading, hits, first_passage });
 
@@ -39,5 +39,17 @@ describe("symptom search", () => {
     expect(remedies[0].sources).toEqual(["a", "b"]);
     expect(remedies[0].cells.map((c) => c.passageId)).toEqual([40, 41, 7]);
     expect(remedies[1].cells[1]).toEqual({ hits: 0, passageId: null });
+  });
+});
+
+describe("remedy headings from running heads", () => {
+  it("drops page numbers so every page of a remedy groups together", () => {
+    expect(remedyKey("796 PHOSPHORUS")).toBe("PHOSPHORUS");
+    expect(remedyKey("PHOSPHORUS 797.")).toBe("PHOSPHORUS");
+    expect(remedyLabel("PHOSPHORICUM ACIDUM 267")).toBe("PHOSPHORICUM ACIDUM");
+    expect(remedyLabel("ABIES CANADENSIS.")).toBe("ABIES CANADENSIS");
+    expect(remedyLabel("PHYTOLACCA Sr")).toBe("PHYTOLACCA");
+    expect(remedyLabel("ACONITUM CAMMARUM ii")).toBe("ACONITUM CAMMARUM");
+    expect(remedyLabel("Abies canadensis.")).toBe("Abies canadensis");
   });
 });

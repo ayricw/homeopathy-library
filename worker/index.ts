@@ -30,6 +30,7 @@ export default {
     const isLocalHost = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
     const local = env.ENVIRONMENT === "local" && isLocalHost;
     let email: string | null = null;
+    let service: string | null = null;
     if (!local) {
       const access = await checkAccess(request, env);
       if (!access.ok) {
@@ -39,6 +40,17 @@ export default {
         });
       }
       email = access.email;
+      if (access.email === null) {
+        service = access.service;
+        // A service token (the GitHub book-list import) may only use the import API and list the books already imported.
+        const listing = request.method === "GET" && url.pathname === "/api/sources";
+        if (!listing && !/^\/api\/imports(\/|$)/.test(url.pathname)) {
+          return new Response("Service tokens can only import books.\n", {
+            status: 403,
+            headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+          });
+        }
+      }
     }
     if (!url.pathname.startsWith("/api/")) return withSecurityHeaders(await env.ASSETS.fetch(request));
     try {
@@ -49,7 +61,7 @@ export default {
       }
       const clients = await routeClients(request, url, env, { local, email });
       if (clients) return clients;
-      return await route(request, url, env, { local, email });
+      return await route(request, url, env, { local, email, service });
     } catch (err) {
       if (err instanceof HttpError) return json({ error: err.message }, err.status);
       console.error("Unhandled error", err instanceof Error ? err.message : err);
@@ -58,7 +70,7 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
-async function route(request: Request, url: URL, env: Env, who: { local: boolean; email: string | null }): Promise<Response> {
+async function route(request: Request, url: URL, env: Env, who: { local: boolean; email: string | null; service?: string | null }): Promise<Response> {
   const path = url.pathname.replace(/\/+$/, "");
   const method = request.method;
   let m: RegExpMatchArray | null;
@@ -74,7 +86,8 @@ async function route(request: Request, url: URL, env: Env, who: { local: boolean
   if (method === "GET" && (m = path.match(/^\/api\/passages\/(\d+)$/))) return getPassage(env, Number(m[1]), url.searchParams);
 
   if (path.startsWith("/api/imports")) {
-    if (env.ALLOW_IMPORTS !== "true") throw new HttpError(403, "Imports are disabled in this environment.");
+    // Production turns off imports from the web page; the GitHub book-list import (a service token) still works.
+    if (env.ALLOW_IMPORTS !== "true" && !who.service) throw new HttpError(403, "Imports are disabled in this environment.");
     if (method === "POST" && path === "/api/imports") return createImport(request, env);
     if (method === "GET" && (m = path.match(/^\/api\/imports\/([\w-]+)$/))) return json(await importStatus(env, m[1]));
     if (method === "POST" && (m = path.match(/^\/api\/imports\/([\w-]+)\/passages$/))) return addPassages(request, env, m[1]);

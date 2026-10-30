@@ -40,6 +40,7 @@ Check the current official Cloudflare and Anthropic documentation before choosin
 - `shared/symptoms.ts`: symptom search. Cleans the symptom list, groups keyword hits under remedy headings, and ranks remedies by symptoms covered. Used by `POST /api/symptoms` and the Symptoms page.
 - `worker/index.ts`: the API (sources, search, passages with context, imports).
 - `migrations/`: D1 schema. Add new numbered files; never edit an applied migration.
+- `shared/ocr.ts`: builds a scanned book's text from the Internet Archive's OCR files, with `[Pg N]` markers only where the Internet Archive read a printed page number and `[Unnumbered page]` elsewhere. `scripts/import-scans.ts` downloads and checks those files (pinned SHA-256 in each source's `"scan"` entry) and previews or imports the books; `.github/workflows/import-books.yml` runs it (preview on branch pushes, import by a manual run with an Access service token).
 - `shared/importer.ts`: the import procedure, used by `scripts/import.ts` (CLI, local) and the Import page (browser, deployed dev).
 - `worker/access.ts`: Cloudflare Access token and email allow-list check.
 - `shared/clients.ts`: client record encryption (seal/open) and validation. `worker/clients.ts`: the `/api/clients` and `/api/visits` API. `src/ClientsPages.tsx`: client list, client page and visit page (the repertory case plus notes and remedy chosen, saved automatically).
@@ -56,7 +57,9 @@ Check the current official Cloudflare and Anthropic documentation before choosin
 - Page numbers come only from explicit page markers in the text (for example `[Pg 12]`). **Never invent page numbers.** Chapter or section labels come from detected headings, and line numbers are always recorded.
 - Imports are identified by the file's SHA-256: the same file again is a duplicate, and an interrupted import resumes. Changing `PARSER_VERSION` or the split rules changes passage boundaries, so bump the version and re-import as a new source rather than mixing.
 - Record extraction failures, encoding problems and (later) uncertain OCR in `import_issues`.
-- UTF-8 text only for now. PDF extraction and OCR come later.
+- Scanned books come from the Internet Archive's own OCR (Google and library scans of books published before 1931). The OCR text is kept as the Internet Archive gives it, apart from leaving out Google's usage notice and "Digitized by" stamps; every scanned import records an `uncertain_ocr` issue, and the source notes list the Internet Archive files and their SHA-256. Running heads stay as headings (they name the remedy on the page); symptom search drops the page numbers in them when grouping remedies.
+- A service token can only import books (`IMPORT_SERVICE_TOKENS`, checked in `worker/access.ts` and `worker/index.ts`); it cannot read client records or search.
+- Our own OCR of PDFs comes later.
 - Repertories: only Repertorium Publicum (OOREP abbrev `publicum`, GPL v3) is imported. OOREP's other repertories are marked as not for redistribution, so they are not used. Grades are OOREP's weights as given; rubric text is never edited. The dump and the generated file stay out of Git (`library/originals/`, `public/data/`).
 
 ## Search and answer rules
@@ -97,7 +100,7 @@ npm run smoke     # end-to-end: import, duplicate, resume, search, references (t
 1. **Milestone 1 (done locally):** import a complete UTF-8 text file, show source metadata, keyword search with filters, and a passage view with context and chapter/page/line references.
 2. **Private dev deploy (in progress):** follow `DEPLOY.md`. The cloud workspace cannot reach Cloudflare, so deploys run from GitHub Actions (`.github/workflows/deploy.yml`, owner's choice 2026-10-18): dev on every merge to `main`, production only by a manual run. Running them from the owner's PC still works.
 3. **Library growth:** more sources, a correction workflow, and comparison views across sources for the same remedy or symptom.
-4. **PDF and OCR:** extraction with page numbers from the PDF itself, and confidence recorded for OCR text.
+4. **PDF and OCR:** scanned books from the Internet Archive's OCR are in (2026-10-18, owner's choice). Still to come: extracting PDFs we hold ourselves, and per-word OCR confidence.
 5. **Semantic search:** Vectorize index `homeopathy-library-dev-passages` alongside keyword search.
 6. **Grounded answers:** a Claude call in the Worker over retrieved passages, with citations and the answer rules above.
 7. **Production:** the `env.production` resources, imports disabled (`ALLOW_IMPORTS=false`), and the same Access policy. Needed before real client records are entered. Open question: how to copy the book library into production while imports are disabled.
