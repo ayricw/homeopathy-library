@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import { toRubric, type RankMethod, type Rubric } from "../shared/repertory";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { MAX_CASE_RUBRICS, toRubric, type RankMethod, type RepertoryFile, type Rubric } from "../shared/repertory";
+import { buildSuggestIndex, phrasesFromAnswers, suggestRubrics, type SuggestIndex } from "../shared/suggest";
 import { send, type ClientDetail, type ClientSummary, type Visit } from "./api";
 import { emptyVisit, MAX_ANSWER, VISIT_KINDS, type VisitKind } from "../shared/clients";
 import { FORMS, KIND_LABEL, OPTION_SEPARATOR, type Question } from "./intake";
@@ -339,6 +340,7 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
           {initial.missing.length === 1 ? "is" : "are"} left out of the ranking: {initial.missing.join("; ")}
         </p>
       )}
+      <SuggestedRubrics rep={rep} kind={kind} answers={answers} rubrics={rubrics} setRubrics={setRubrics} />
       <RepertoryCase rep={rep} rubrics={rubrics} setRubrics={setRubrics} method={method} setMethod={setMethod} saved />
       <div className="controls">
         <label htmlFor="visit-remedy">Remedy chosen</label>
@@ -433,5 +435,81 @@ function TickList({ question: q, value, more, setAnswer }: { question: Question;
         rows={1}
       />
     </fieldset>
+  );
+}
+
+// Built once per repertory file, the first time a visit shows suggestions.
+let suggestIndex: { data: RepertoryFile; index: SuggestIndex } | null = null;
+const getSuggestIndex = (data: RepertoryFile) => {
+  if (suggestIndex?.data !== data) suggestIndex = { data, index: buildSuggestIndex(data) };
+  return suggestIndex.index;
+};
+
+/** Rubrics matching what is ticked and written on the form. Worked out in the browser; nothing is sent anywhere. */
+function SuggestedRubrics({
+  rep,
+  kind,
+  answers,
+  rubrics,
+  setRubrics,
+}: {
+  rep: LoadedRepertory;
+  kind: VisitKind;
+  answers: Record<string, string>;
+  rubrics: Rubric[];
+  setRubrics: (next: Rubric[]) => void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const deferred = useDeferredValue(answers);
+  const suggestions = useMemo(() => {
+    const questions = FORMS[kind].flatMap((s) => s.questions);
+    return suggestRubrics(getSuggestIndex(rep.data), phrasesFromAnswers(deferred, questions, OPTION_SEPARATOR));
+  }, [rep.data, kind, deferred]);
+  const inCase = new Set(rubrics.map((r) => r.id));
+  const full = rubrics.length >= MAX_CASE_RUBRICS;
+  const shown = showAll ? suggestions : suggestions.slice(0, 12);
+
+  return (
+    <section className="suggested">
+      <h2>Suggested rubrics</h2>
+      {suggestions.length === 0 ? (
+        <p className="muted small">
+          As you tick boxes and write answers above, rubrics whose words match appear here. Nothing is added until you press Add.
+        </p>
+      ) : (
+        <>
+          <p className="muted small">
+            Matched from the ticks and words above, in this browser only. They are prompts, not a prescription: add the ones that fit
+            the case.
+          </p>
+          <ul className="suggest-list">
+            {shown.map((s) => {
+              const added = inCase.has(s.id);
+              return (
+                <li key={s.id}>
+                  <div>
+                    <span className="suggest-path">{s.path}</span> <span className="muted small">{s.remedyCount} {s.remedyCount === 1 ? "remedy" : "remedies"}</span>
+                    <span className="suggest-from">{s.from}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className={added ? "secondary" : undefined}
+                    disabled={added || full}
+                    onClick={() => setRubrics([...rubrics, toRubric(rep.data, s.id)])}
+                  >
+                    {added ? "Added" : "Add"}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {suggestions.length > shown.length && (
+            <button type="button" className="secondary" onClick={() => setShowAll(true)}>
+              Show all {suggestions.length}
+            </button>
+          )}
+        </>
+      )}
+    </section>
   );
 }
