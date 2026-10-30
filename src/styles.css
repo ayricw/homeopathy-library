@@ -241,3 +241,11 @@ button.danger { background: transparent; color: var(--danger); border: 1px solid
 .case-form label { display: block; font-weight: 600; }
 .case-form .hint { margin: 0.1rem 0 0.3rem; color: var(--muted); font-size: 13px; }
 .case-form textarea { display: block; width: 100%; margin-top: 0.3rem; padding: 0.5rem 0.7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; resize: vertical; }
+.case-form fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+.case-form legend { padding: 0; font-weight: 600; }
+.ticks { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.35rem 0 0.1rem; }
+.ticks button {
+  padding: 0.25rem 0.6rem; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--bg); color: var(--text); font-size: 13px;
+}
+.ticks button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }

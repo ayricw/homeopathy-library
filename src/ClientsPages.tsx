@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { toRubric, type RankMethod, type Rubric } from "../shared/repertory";
 import { send, type ClientDetail, type ClientSummary, type Visit } from "./api";
 import { emptyVisit, MAX_ANSWER, VISIT_KINDS, type VisitKind } from "../shared/clients";
-import { FORMS, KIND_LABEL } from "./intake";
+import { FORMS, KIND_LABEL, OPTION_SEPARATOR, type Question } from "./intake";
 import { go, RepertoryCase, Status, useFetch, useRepertory, type AppConfig, type LoadedRepertory } from "./App";
 
 // Client records. Names and visits are stored encrypted in the clients database by the Worker.
@@ -364,36 +364,74 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
 }
 
 
-/** The visit's form: one block per section, each question with its own box. Sections fold away. */
+/** The visit's form: one block per section, each question with its own box or tick list. Sections fold away. */
 function CaseForm({ kind, answers, setAnswer }: { kind: VisitKind; answers: Record<string, string>; setAnswer: (id: string, text: string) => void }) {
+  const answered = (q: Question, from = answers) => !!(from[q.id]?.trim() || from[`${q.id}-more`]?.trim());
+  // Folded sections open if they had answers when the visit was opened; after that they open and close only by hand.
+  const [loaded] = useState(answers);
   return (
     <div className="case-form">
-      {FORMS[kind].map((section) => {
-        const done = section.questions.filter((q) => answers[q.id]?.trim()).length;
-        return (
-          <details key={section.title} open>
-            <summary>
-              <h2>{section.title}</h2>
-              <span className="muted">
-                {done} of {section.questions.length}
-              </span>
-            </summary>
-            {section.questions.map((q) => (
-              <div key={q.id} className="question">
-                <label htmlFor={`q-${q.id}`}>{q.label}</label>
-                {q.hint && <p className="hint">{q.hint}</p>}
-                <textarea
-                  id={`q-${q.id}`}
-                  value={answers[q.id] ?? ""}
-                  onChange={(e) => setAnswer(q.id, e.target.value)}
-                  maxLength={MAX_ANSWER}
-                  rows={q.id === "sensation" || q.id === "main-complaint" ? 8 : 3}
-                />
-              </div>
-            ))}
-          </details>
-        );
-      })}
+      {FORMS[kind].map((section) => (
+        <details key={section.title} open={!section.folded || section.questions.some((q) => answered(q, loaded))}>
+          <summary>
+            <h2>{section.title}</h2>
+            <span className="muted">
+              {section.questions.filter((q) => answered(q)).length} of {section.questions.length}
+            </span>
+          </summary>
+          {section.questions.map((q) => (
+            <div key={q.id} className="question">
+              {q.options ? (
+                <TickList question={q} value={answers[q.id] ?? ""} more={answers[`${q.id}-more`] ?? ""} setAnswer={setAnswer} />
+              ) : (
+                <>
+                  <label htmlFor={`q-${q.id}`}>{q.label}</label>
+                  {q.hint && <p className="hint">{q.hint}</p>}
+                  <textarea
+                    id={`q-${q.id}`}
+                    value={answers[q.id] ?? ""}
+                    onChange={(e) => setAnswer(q.id, e.target.value)}
+                    maxLength={MAX_ANSWER}
+                    rows={q.long ? 7 : 2}
+                  />
+                </>
+              )}
+            </div>
+          ))}
+        </details>
+      ))}
     </div>
+  );
+}
+
+function TickList({ question: q, value, more, setAnswer }: { question: Question; value: string; more: string; setAnswer: (id: string, text: string) => void }) {
+  const ticked = value ? value.split(OPTION_SEPARATOR) : [];
+  // Ticks saved under an option that has since been renamed or removed stay in the answer and are shown too.
+  const shown = [...q.options!, ...ticked.filter((t) => !q.options!.includes(t))];
+  const toggle = (o: string) =>
+    setAnswer(q.id, shown.filter((x) => (x === o ? !ticked.includes(o) : ticked.includes(x))).join(OPTION_SEPARATOR));
+  return (
+    <fieldset>
+      <legend>{q.label}</legend>
+      {q.hint && <p className="hint">{q.hint}</p>}
+      <div className="ticks">
+        {shown.map((o) => (
+          <button key={o} type="button" aria-pressed={ticked.includes(o)} onClick={() => toggle(o)}>
+            {o}
+          </button>
+        ))}
+      </div>
+      <label htmlFor={`q-${q.id}-more`} className="visually-hidden">
+        {q.label}: details
+      </label>
+      <textarea
+        id={`q-${q.id}-more`}
+        placeholder="Details, other, or how strongly"
+        value={more}
+        onChange={(e) => setAnswer(`${q.id}-more`, e.target.value)}
+        maxLength={MAX_ANSWER}
+        rows={1}
+      />
+    </fieldset>
   );
 }
