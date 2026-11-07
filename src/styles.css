@@ -404,3 +404,10 @@ main:has(> .home) { max-width: 64rem; }
 .suggest-path { font-weight: 600; }
 .suggest-from { display: block; color: var(--muted); font-size: 12.5px; }
 .suggest-list button { flex: none; padding: 0.35rem 0.9rem; font-size: 13px; }
+
+/* Import notes: one row per chosen file, with its status. */
+.notes-import { margin-bottom: 2.5rem; padding-bottom: 2rem; border-bottom: 1px solid var(--line); }
+.notes-files { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.notes-files li { overflow-wrap: anywhere; }
+.import .notes-files label { display: inline; color: var(--text); }
+.import .notes-files input[type="checkbox"] { width: auto; }

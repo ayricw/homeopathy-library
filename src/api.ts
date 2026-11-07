@@ -12,6 +12,7 @@ export interface Source {
   attribution: string;
   reuse_terms: string;
   notes: string | null;
+  kind?: "book" | "notes";
   original_filename: string;
   sha256: string;
   byte_length: number;

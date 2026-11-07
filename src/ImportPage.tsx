@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from "react";
 import sample from "../library/sources/anshutz-1900-new-old-forgotten-remedies.json";
 import { importText, type ImportOutcome } from "../shared/importer";
+import { notesMetadata, notesSkipReason } from "../shared/notes";
+import { extractText } from "./extract";
 import type { Issue } from "../shared/text";
 
 type Meta = Record<string, string>;
@@ -63,6 +65,7 @@ export function ImportPage() {
 
   return (
     <section>
+      <NotesImport />
       <h1>Import a book</h1>
       <p className="muted">
         UTF-8 plain text only for now. Check the source's reuse terms before importing. The original file is kept unchanged.
@@ -127,5 +130,101 @@ export function ImportPage() {
       )}
       {outcome?.kind === "failed" && <p className="error">Import failed: {outcome.error}</p>}
     </section>
+  );
+}
+
+// ---------- notes: Word and PDF files, many at once ----------
+
+interface NoteRow {
+  file: File;
+  include: boolean;
+  skip: string | null;
+  status: string;
+  sourceId?: string;
+  failed?: boolean;
+}
+
+function NotesImport() {
+  const [rows, setRows] = useState<NoteRow[]>([]);
+  const [author, setAuthor] = useState("School of Intuitive Homeopathy (course notes)");
+  const [busy, setBusy] = useState(false);
+
+  const choose = (files: FileList | null) =>
+    setRows(
+      [...(files ?? [])].map((file) => {
+        const skip = notesSkipReason(file.name);
+        return { file, include: !skip, skip, status: skip ?? "" };
+      }),
+    );
+  const update = (i: number, patch: Partial<NoteRow>) => setRows((rs) => rs.map((r, n) => (n === i ? { ...r, ...patch } : r)));
+
+  const run = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    for (const [i, row] of rows.entries()) {
+      if (!row.include || row.sourceId) continue;
+      try {
+        update(i, { status: "Reading the text…", failed: false });
+        const text = await extractText(row.file);
+        if (text.replace(/\[Pg \d+\]/g, "").trim().length < 40) {
+          update(i, { status: "No text found. It is probably scanned images or slides without text.", failed: true });
+          continue;
+        }
+        const bytes = new TextEncoder().encode(text) as Uint8Array<ArrayBuffer>;
+        const name = row.file.name.replace(/\.[^.]+$/, "") + ".txt";
+        const result = await importText(window.location.origin, { bytes, name }, notesMetadata(row.file.name, author.trim() || "Course notes"), {
+          progress: (done, total) => update(i, { status: `Importing ${done}/${total} passages…` }),
+        });
+        if (result.kind === "complete") update(i, { status: `Imported, ${result.passages} passages.`, sourceId: result.sourceId });
+        else if (result.kind === "duplicate") update(i, { status: "Already in the library.", sourceId: result.sourceId });
+        else update(i, { status: `Failed: ${result.error}`, failed: true });
+      } catch (err) {
+        update(i, { status: `Failed: ${err instanceof Error ? err.message : err}`, failed: true });
+      }
+    }
+    setBusy(false);
+  };
+
+  const chosen = rows.filter((r) => r.include && !r.sourceId).length;
+  return (
+    <div className="notes-import">
+      <h1>Import notes</h1>
+      <p className="muted">
+        Choose Word (.docx) or PDF files, as many as you like. The text is read here in the browser and added to the library as
+        Notes, kept apart from the books and searchable with them. Case files and blank forms are left out unless you tick them.
+        Old .doc files and slide decks (.pptx) can't be read; save them as .docx or PDF first.
+      </p>
+      <form className="import" onSubmit={run}>
+        <label>
+          Files
+          <input type="file" multiple accept=".docx,.pdf,.txt" onChange={(e) => choose(e.target.files)} disabled={busy} />
+        </label>
+        <label>
+          Author or course
+          <input value={author} onChange={(e) => setAuthor(e.target.value)} disabled={busy} />
+        </label>
+        {rows.length > 0 && (
+          <ul className="notes-files">
+            {rows.map((r, i) => (
+              <li key={i}>
+                <label>
+                  <input type="checkbox" checked={r.include} disabled={busy || !!r.sourceId} onChange={(e) => update(i, { include: e.target.checked })} />{" "}
+                  {r.file.name}
+                </label>
+                {r.status && (
+                  <span className={r.failed ? "error small" : "muted small"}>
+                    {" "}
+                    {r.status} {r.sourceId && <a href={`#/sources/${r.sourceId}`}>View</a>}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        <button type="submit" disabled={busy || chosen === 0}>
+          {busy ? "Importing…" : `Import ${chosen} file${chosen === 1 ? "" : "s"}`}
+        </button>
+      </form>
+    </div>
   );
 }
