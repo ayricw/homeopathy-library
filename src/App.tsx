@@ -1057,22 +1057,34 @@ function SourcesPage() {
   const { data, loading, error } = useFetch<{ sources: Source[] }>("/api/sources");
   if (!data) return <Status loading={loading} error={error} />;
   if (!data.sources.length) return <p className="muted">No sources imported yet. See README.md for how to import a book.</p>;
+  const books = data.sources.filter((s) => s.kind !== "notes");
+  const notes = data.sources.filter((s) => s.kind === "notes");
+  const list = (items: Source[]) => (
+    <ul className="sources">
+      {items.map((s) => (
+        <li key={s.id}>
+          <a href={`#/sources/${s.id}`}>
+            <strong>{s.title}</strong>
+            <span>{citation(s)}</span>
+            <span className="muted">
+              {s.passage_count} passages · import {s.import_status ?? "unknown"}
+            </span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
   return (
     <section>
       <h1>Sources</h1>
-      <ul className="sources">
-        {data.sources.map((s) => (
-          <li key={s.id}>
-            <a href={`#/sources/${s.id}`}>
-              <strong>{s.title}</strong>
-              <span>{citation(s)}</span>
-              <span className="muted">
-                {s.passage_count} passages · import {s.import_status ?? "unknown"}
-              </span>
-            </a>
-          </li>
-        ))}
-      </ul>
+      {notes.length > 0 && <h2>Books</h2>}
+      {list(books)}
+      {notes.length > 0 && (
+        <>
+          <h2>Notes</h2>
+          {list(notes)}
+        </>
+      )}
     </section>
   );
 }

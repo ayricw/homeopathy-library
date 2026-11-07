@@ -39,6 +39,8 @@
   },
   "dependencies": {
     "jose": "^6.2.12",
+    "mammoth": "^1.11.0",
+    "pdfjs-dist": "^5.4.296",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

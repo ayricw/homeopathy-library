@@ -98,7 +98,7 @@ async function route(request: Request, url: URL, env: Env, who: { local: boolean
 // ---------- Sources ----------
 
 const SOURCE_COLUMNS = `id, title, author, editor, edition, publication_year, publisher, language,
-  source_url, attribution, reuse_terms, notes, original_filename, sha256, byte_length, created_at`;
+  source_url, attribution, reuse_terms, notes, kind, original_filename, sha256, byte_length, created_at`;
 
 async function listSources(env: Env) {
   const { results } = await env.DB.prepare(
@@ -266,6 +266,7 @@ interface SourceMetadata {
   attribution: string;
   reuse_terms: string;
   notes?: string | null;
+  kind?: "book" | "notes";
 }
 
 function validateMetadata(raw: unknown): SourceMetadata {
@@ -277,6 +278,7 @@ function validateMetadata(raw: unknown): SourceMetadata {
   if (!/^[a-z0-9][a-z0-9-]{2,80}$/.test(m.id as string)) throw new HttpError(400, "metadata.id must be a lowercase slug");
   if (!/^https?:\/\//.test(m.source_url as string)) throw new HttpError(400, "metadata.source_url must be an http(s) URL");
   if (m.publication_year != null && !Number.isInteger(m.publication_year)) throw new HttpError(400, "metadata.publication_year must be an integer or null");
+  if (m.kind != null && m.kind !== "book" && m.kind !== "notes") throw new HttpError(400, 'metadata.kind must be "book" or "notes"');
   return m as unknown as SourceMetadata;
 }
 
@@ -338,8 +340,8 @@ async function createImport(request: Request, env: Env) {
   await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO sources (id, title, author, editor, edition, publication_year, publisher, language, source_url,
-         attribution, reuse_terms, notes, original_filename, original_r2_key, extracted_r2_key, sha256, byte_length)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         attribution, reuse_terms, notes, kind, original_filename, original_r2_key, extracted_r2_key, sha256, byte_length)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       meta.id,
       meta.title,
@@ -353,6 +355,7 @@ async function createImport(request: Request, env: Env) {
       meta.attribution,
       meta.reuse_terms,
       meta.notes ?? null,
+      meta.kind ?? "book",
       filename,
       originalKey,
       extractedKey,
