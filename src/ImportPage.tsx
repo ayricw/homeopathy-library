@@ -164,6 +164,12 @@ function NotesImport() {
     for (const [i, row] of rows.entries()) {
       if (!row.include || row.sourceId) continue;
       try {
+        // A note already imported under this name is skipped without reading it again.
+        const id = notesMetadata(row.file.name, "").id as string;
+        if ((await fetch(`/api/sources/${id}`)).ok) {
+          update(i, { status: "Already in the library.", sourceId: id, failed: false });
+          continue;
+        }
         update(i, { status: "Reading the text…", failed: false });
         const { text, recognized } = await extractText(row.file, (status) => update(i, { status }));
         if (text.replace(/\[Pg \d+\]/g, "").trim().length < 40) {
