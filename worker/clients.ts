@@ -140,6 +140,10 @@ export async function routeClients(request: Request, url: URL, env: ClientsEnv, 
         date: v.date,
         rubric_count: v.rubrics.length,
         remedy: v.remedy,
+        potency: v.potency ?? "",
+        dosing: v.dosing ?? "",
+        response: v.response ?? "",
+        response_note: firstLine(v.responseNotes ?? ""),
         kind: v.kind ?? "acute",
         complaint: firstLine(v.answers?.["main-complaint"] || v.answers?.["how-doing"] || ""),
       }));
@@ -190,7 +194,17 @@ export async function routeClients(request: Request, url: URL, env: ClientsEnv, 
     if (method === "GET") {
       const visit = await getVisit(id);
       const client = await getClient(visit.client_id);
-      return json({ visit, client: { id: client.id, name: client.name } });
+      // The visit before this one, so a follow-up can show what was given last time.
+      const prevRow = await db
+        .prepare(
+          `SELECT * FROM visits WHERE client_id = ? AND id != ? AND (visit_date < ? OR (visit_date = ? AND created_at < ?))
+           ORDER BY visit_date DESC, created_at DESC LIMIT 1`,
+        )
+        .bind(visit.client_id, id, visit.date, visit.date, visit.created_at)
+        .first<VisitRow>();
+      const prev = prevRow ? await readVisit(prevRow) : null;
+      const previous = prev ? { id: prev.id, date: prev.date, remedy: prev.remedy, potency: prev.potency ?? "", dosing: prev.dosing ?? "" } : null;
+      return json({ visit, client: { id: client.id, name: client.name }, previous });
     }
     if (method === "PUT") {
       const visit = await getVisit(id);

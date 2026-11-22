@@ -6,6 +6,13 @@
 export const MAX_NAME = 100;
 export const MAX_NOTES = 20_000;
 export const MAX_REMEDY = 200;
+export const MAX_POTENCY = 40;
+export const MAX_DOSING = 500;
+export const MAX_RESPONSE_NOTES = 5_000;
+
+/** How the client did since the last remedy, recorded on the next visit. "" when not recorded. */
+export const RESPONSES = ["", "better", "partly", "same", "worse", "aggravation"] as const;
+export type Response = (typeof RESPONSES)[number];
 export const MAX_VISIT_RUBRICS = 40;
 export const MAX_RUBRIC_PATH = 500;
 export const MAX_ANSWER = 10_000;
@@ -21,6 +28,12 @@ export interface VisitData {
   method: "symptoms" | "grades";
   notes: string;
   remedy: string;
+  /** The prescription: potency (e.g. 30C, 200C, LM1) and how it is given (free text, Robyn's own words). */
+  potency: string;
+  dosing: string;
+  /** On a follow-up: how the client responded to the previous remedy. */
+  response: Response;
+  responseNotes: string;
   kind: VisitKind;
   /** Answers to the visit form, by question id. Answers to another kind's form are kept if the kind is changed. */
   answers: Record<string, string>;
@@ -97,6 +110,16 @@ export function cleanVisit(input: unknown): Result<VisitData> {
   if (typeof notes !== "string" || notes.length > MAX_NOTES) return { ok: false, error: `Notes can be at most ${MAX_NOTES.toLocaleString()} characters.` };
   const remedy = v.remedy ?? "";
   if (typeof remedy !== "string" || remedy.length > MAX_REMEDY) return { ok: false, error: `The remedy can be at most ${MAX_REMEDY} characters.` };
+  const potency = v.potency ?? "";
+  if (typeof potency !== "string" || potency.length > MAX_POTENCY) return { ok: false, error: `The potency can be at most ${MAX_POTENCY} characters.` };
+  const dosing = v.dosing ?? "";
+  if (typeof dosing !== "string" || dosing.length > MAX_DOSING) return { ok: false, error: `How it is given can be at most ${MAX_DOSING} characters.` };
+  const response = v.response ?? "";
+  if (!(RESPONSES as readonly unknown[]).includes(response)) return { ok: false, error: "Unknown response." };
+  const responseNotes = v.responseNotes ?? "";
+  if (typeof responseNotes !== "string" || responseNotes.length > MAX_RESPONSE_NOTES) {
+    return { ok: false, error: `Response notes can be at most ${MAX_RESPONSE_NOTES.toLocaleString()} characters.` };
+  }
   const kind = v.kind ?? "acute";
   if (!(VISIT_KINDS as readonly unknown[]).includes(kind)) return { ok: false, error: "Unknown visit type." };
   const raw = v.answers ?? {};
@@ -110,7 +133,32 @@ export function cleanVisit(input: unknown): Result<VisitData> {
     if (text.trim()) answers[id] = text;
   }
   if (total > MAX_ANSWERS_TOTAL) return { ok: false, error: `The form can hold at most ${MAX_ANSWERS_TOTAL.toLocaleString()} characters.` };
-  return { ok: true, value: { rubrics: unique, method, notes, remedy: remedy.trim(), kind: kind as VisitKind, answers } };
+  return {
+    ok: true,
+    value: {
+      rubrics: unique,
+      method,
+      notes,
+      remedy: remedy.trim(),
+      potency: potency.trim(),
+      dosing,
+      response: response as Response,
+      responseNotes,
+      kind: kind as VisitKind,
+      answers,
+    },
+  };
 }
 
-export const emptyVisit = (kind: VisitKind = "acute"): VisitData => ({ rubrics: [], method: "symptoms", notes: "", remedy: "", kind, answers: {} });
+export const emptyVisit = (kind: VisitKind = "acute"): VisitData => ({
+  rubrics: [],
+  method: "symptoms",
+  notes: "",
+  remedy: "",
+  potency: "",
+  dosing: "",
+  response: "",
+  responseNotes: "",
+  kind,
+  answers: {},
+});

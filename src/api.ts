@@ -1,4 +1,4 @@
-import type { VisitKind } from "../shared/clients";
+import type { Response, VisitKind } from "../shared/clients";
 export interface Source {
   id: string;
   title: string;
@@ -59,6 +59,7 @@ export interface PassageResponse {
   before: PassageText[];
   after: PassageText[];
   corrections: { corrected_text: string; note: string | null; corrected_by: string | null; created_at: string }[];
+  notes?: { id: number; note: string; created_at: string; updated_at: string }[];
 }
 
 export interface SourceDetail {
@@ -98,7 +99,18 @@ export interface ClientSummary {
 
 export interface ClientDetail {
   client: { id: string; name: string; created_at: string };
-  visits: { id: string; date: string; rubric_count: number; remedy: string; kind: VisitKind; complaint: string }[];
+  visits: {
+    id: string;
+    date: string;
+    rubric_count: number;
+    remedy: string;
+    potency: string;
+    dosing: string;
+    response: Response;
+    response_note: string;
+    kind: VisitKind;
+    complaint: string;
+  }[];
 }
 
 export interface Visit {
@@ -109,8 +121,20 @@ export interface Visit {
   method: "symptoms" | "grades";
   notes: string;
   remedy: string;
+  potency?: string;
+  dosing?: string;
+  response?: Response;
+  responseNotes?: string;
   kind?: VisitKind;
   answers?: Record<string, string>;
+}
+
+export interface PreviousVisit {
+  id: string;
+  date: string;
+  remedy: string;
+  potency: string;
+  dosing: string;
 }
 
 export async function send<T>(method: "POST" | "PUT" | "PATCH" | "DELETE", path: string, data?: unknown, init?: RequestInit): Promise<T> {

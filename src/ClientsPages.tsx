@@ -1,8 +1,27 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  CalendarDays,
+  ChevronRight,
+  ClipboardList,
+  Download,
+  ListTree,
+  Minus,
+  Pencil,
+  Pill,
+  Printer,
+  Search,
+  Trash2,
+  TrendingDown,
+  TrendingUp,
+  UserPlus,
+  Users,
+  Zap,
+} from "lucide-react";
 import { MAX_CASE_RUBRICS, repertorize, toRubric, type RankMethod, type RepertoryFile, type Rubric } from "../shared/repertory";
 import { buildSuggestIndex, groupSuggestions, phrasesFromAnswers, suggestRubrics, type SuggestIndex, type Suggestion } from "../shared/suggest";
-import { send, type ClientDetail, type ClientSummary, type Visit } from "./api";
-import { emptyVisit, MAX_ANSWER, VISIT_KINDS, type VisitKind } from "../shared/clients";
+import { send, type ClientDetail, type ClientSummary, type PreviousVisit, type Visit } from "./api";
+import { emptyVisit, MAX_ANSWER, RESPONSES, VISIT_KINDS, type Response, type VisitKind } from "../shared/clients";
+import { Avatar, EmptyState } from "./ui";
 import { FORMS, KIND_LABEL, OPTION_SEPARATOR, type Question } from "./intake";
 import { CaseList, CaseResults, go, liveRubrics, RubricPicker, Status, useFetch, useRepertory, type AppConfig, type LoadedRepertory } from "./App";
 import { shortDate } from "./HomePage";
@@ -14,6 +33,33 @@ const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+
+/** How a client did since the last remedy, with an icon and a colour for the timeline. */
+export const RESPONSE_LABEL: Record<Exclude<Response, "">, string> = {
+  better: "Better",
+  partly: "Partly better",
+  same: "No change",
+  worse: "Worse",
+  aggravation: "Aggravation first",
+};
+export function ResponseIcon({ response, size = 15 }: { response: Response; size?: number }) {
+  if (response === "better" || response === "partly") return <TrendingUp size={size} aria-hidden="true" />;
+  if (response === "worse") return <TrendingDown size={size} aria-hidden="true" />;
+  if (response === "aggravation") return <Zap size={size} aria-hidden="true" />;
+  return <Minus size={size} aria-hidden="true" />;
+}
+export function ResponseBadge({ response }: { response: Response }) {
+  if (!response) return null;
+  return (
+    <span className={`response-badge r-${response}`}>
+      <ResponseIcon response={response} size={13} />
+      {RESPONSE_LABEL[response]}
+    </span>
+  );
+}
+/** "Pulsatilla 200C" */
+export const prescription = (v: { remedy: string; potency?: string }) => [v.remedy, v.potency].filter(Boolean).join(" ");
+export const POTENCIES = ["6C", "12C", "30C", "200C", "1M", "10M", "LM1", "LM2", "LM3", "6X", "12X"];
 
 function TestOnly({ config }: { config?: AppConfig }) {
   if (!config || config.environment === "production") return null;
@@ -55,7 +101,15 @@ export function ClientsPage({ config }: { config?: AppConfig }) {
 
   return (
     <section>
-      <h1>Clients</h1>
+      <div className="page-head">
+        <span className="page-icon">
+          <Users />
+        </span>
+        <div>
+          <h1>Clients</h1>
+          <p className="muted">Every client's visits, prescriptions and how they responded, stored encrypted.</p>
+        </div>
+      </div>
       <TestOnly config={config} />
       <form
         className="search"
@@ -67,26 +121,38 @@ export function ClientsPage({ config }: { config?: AppConfig }) {
         <label htmlFor="new-client" className="visually-hidden">
           New client name
         </label>
-        <input id="new-client" value={name} onChange={(e) => setName(e.target.value)} placeholder="New client's name or initials" maxLength={100} autoComplete="off" />
+        <span className="search-field">
+          <UserPlus size={18} className="field-icon" aria-hidden="true" />
+          <input id="new-client" value={name} onChange={(e) => setName(e.target.value)} placeholder="New client's name or initials" maxLength={100} autoComplete="off" />
+        </span>
         <button type="submit" disabled={busy || !name.trim()}>
           Add client
         </button>
       </form>
       {error && <p className="error">{error}</p>}
       <Status loading={list.loading} error={list.error} />
-      {list.data && list.data.clients.length === 0 && <p className="muted">No clients yet.</p>}
+      {list.data && list.data.clients.length === 0 && <EmptyState icon={<Users />} title="No clients yet" text="Add a client above to start their first intake." />}
       {list.data && list.data.clients.length > 8 && (
-        <input className="browse-filter" type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Find a client" aria-label="Find a client" />
+        <span className="search-field filter-field">
+          <Search size={16} className="field-icon" aria-hidden="true" />
+          <input className="browse-filter" type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Find a client" aria-label="Find a client" />
+        </span>
       )}
       {shown.length > 0 && (
-        <ul className="client-list">
+        <ul className="client-cards">
           {shown.map((c) => (
             <li key={c.id}>
-              <a href={`#/clients/${c.id}`}>{c.name}</a>
-              <span className="muted">
-                {c.visit_count} visit{c.visit_count === 1 ? "" : "s"}
-                {c.last_visit ? `, last ${c.last_visit}` : ""}
-              </span>
+              <a href={`#/clients/${c.id}`}>
+                <Avatar name={c.name} />
+                <span className="cc-text">
+                  <b>{c.name}</b>
+                  <span className="muted small">
+                    {c.visit_count} visit{c.visit_count === 1 ? "" : "s"}
+                    {c.last_visit ? ` · last ${shortDate(c.last_visit)}` : ""}
+                  </span>
+                </span>
+                <ChevronRight size={18} className="muted" aria-hidden="true" />
+              </a>
             </li>
           ))}
         </ul>
@@ -145,13 +211,17 @@ export function ClientPage({ id, config }: { id: string; config?: AppConfig }) {
         <>
           {rename === null ? (
             <div className="title-row">
+              <Avatar name={c.name} size="lg" />
               <h1>{c.name}</h1>
               <MoreMenu>
                 <button type="button" onClick={() => setRename(c.name)}>
-                  Rename
+                  <Pencil size={15} aria-hidden="true" /> Rename
+                </button>
+                <button type="button" onClick={() => window.print()}>
+                  <Printer size={15} aria-hidden="true" /> Print timeline
                 </button>
                 <a href={`/api/clients/${id}/export`} download>
-                  Download record
+                  <Download size={15} aria-hidden="true" /> Download record
                 </a>
                 <button
                   type="button"
@@ -164,7 +234,7 @@ export function ClientPage({ id, config }: { id: string; config?: AppConfig }) {
                     });
                   }}
                 >
-                  Delete client…
+                  <Trash2 size={15} aria-hidden="true" /> Delete client…
                 </button>
               </MoreMenu>
             </div>
@@ -203,7 +273,9 @@ export function ClientPage({ id, config }: { id: string; config?: AppConfig }) {
               });
             }}
           >
-            <label htmlFor="new-visit-kind">New visit</label>
+            <label htmlFor="new-visit-kind">
+              <CalendarDays size={17} aria-hidden="true" /> New visit
+            </label>
             <select id="new-visit-kind" value={newKind} onChange={(e) => setKind(e.target.value as VisitKind)}>
               {VISIT_KINDS.map((k) => (
                 <option key={k} value={k}>
@@ -219,29 +291,69 @@ export function ClientPage({ id, config }: { id: string; config?: AppConfig }) {
           </form>
           {error && <p className="error">{error}</p>}
 
-          <h2>Visits</h2>
-          {detail.data!.visits.length === 0 ? (
-            <p className="muted">No visits yet.</p>
-          ) : (
-            <ul className="visit-list">
-              {detail.data!.visits.map((v) => (
-                <li key={v.id}>
-                  <a href={`#/visits/${v.id}`}>
-                    <span className="visit-when">
-                      <b>{shortDate(v.date)}</b> <span className="kind-pill">{KIND_LABEL[v.kind ?? "acute"]}</span>
-                    </span>
-                    {v.complaint && <span className="visit-complaint">{v.complaint}</span>}
-                    <span className="muted small">
-                      {v.remedy ? `Remedy: ${v.remedy}` : "No remedy recorded"} · {v.rubric_count} rubric{v.rubric_count === 1 ? "" : "s"}
-                    </span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
+          <Timeline visits={detail.data!.visits} />
         </>
       )}
     </section>
+  );
+}
+
+/** The client's visits, newest first: what was given each time and how they responded by the next visit. */
+function Timeline({ visits }: { visits: ClientDetail["visits"] }) {
+  if (visits.length === 0) return <EmptyState icon={<CalendarDays />} title="No visits yet" text="Start the first visit above. A first visit opens the full intake." />;
+  // Oldest first for the summary strip: remedy, then the response recorded at the next visit.
+  const chrono = [...visits].reverse();
+  const given = chrono.map((v, i) => ({ v, response: chrono[i + 1]?.response ?? "" })).filter((x) => x.v.remedy);
+  return (
+    <>
+      {given.length > 0 && (
+        <div className="rx-strip" aria-label="Remedies given">
+          <h2>
+            <Pill size={18} aria-hidden="true" /> Remedies given
+          </h2>
+          <ol>
+            {given.map(({ v, response }) => (
+              <li key={v.id} className={response ? `r-${response}` : undefined}>
+                <b>{prescription(v)}</b>
+                <span className="muted small">{shortDate(v.date)}</span>
+                {response ? <ResponseBadge response={response} /> : <span className="muted small">Response not recorded yet</span>}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+      <h2 className="section-title">
+        <CalendarDays size={20} aria-hidden="true" /> Timeline
+      </h2>
+      <ol className="timeline">
+        {visits.map((v) => (
+          <li key={v.id} className={v.response ? `r-${v.response}` : undefined}>
+            <span className="tl-dot" aria-hidden="true" />
+            <a href={`#/visits/${v.id}`} className="tl-card">
+              <span className="visit-when">
+                <b>{shortDate(v.date)}</b> <span className="kind-pill">{KIND_LABEL[v.kind ?? "acute"]}</span>
+                {v.response && <ResponseBadge response={v.response} />}
+              </span>
+              {v.response_note && <span className="tl-response">“{v.response_note}”</span>}
+              {v.complaint && <span className="visit-complaint">{v.complaint}</span>}
+              <span className="tl-meta">
+                {v.remedy ? (
+                  <span className="rx">
+                    <Pill size={14} aria-hidden="true" /> {prescription(v)}
+                    {v.dosing && <span className="muted"> · {v.dosing}</span>}
+                  </span>
+                ) : (
+                  <span className="muted">No remedy recorded</span>
+                )}
+                <span className="muted">
+                  {v.rubric_count} rubric{v.rubric_count === 1 ? "" : "s"}
+                </span>
+              </span>
+            </a>
+          </li>
+        ))}
+      </ol>
+    </>
   );
 }
 
@@ -249,7 +361,7 @@ type SaveState = "saved" | "unsaved" | "saving" | { error: string };
 
 export function VisitPage({ id, config }: { id: string; config?: AppConfig }) {
   const rep = useRepertory();
-  const loaded = useFetch<{ visit: Visit; client: { id: string; name: string } }>(config?.clients ? `/api/visits/${id}` : null);
+  const loaded = useFetch<{ visit: Visit; client: { id: string; name: string }; previous: PreviousVisit | null }>(config?.clients ? `/api/visits/${id}` : null);
   if (config && !config.clients) return <NotAvailable />;
   return (
     <section className="wide">
@@ -257,7 +369,7 @@ export function VisitPage({ id, config }: { id: string; config?: AppConfig }) {
       <Status loading={loaded.loading} error={loaded.error} />
       {rep.error && <p className="error">The repertory could not be loaded: {rep.error}</p>}
       {rep.rep === null && <p className="muted">No repertory is included in this deployment yet.</p>}
-      {loaded.data && rep.rep && <VisitEditor key={id} rep={rep.rep} visit={loaded.data.visit} client={loaded.data.client} />}
+      {loaded.data && rep.rep && <VisitEditor key={id} rep={rep.rep} visit={loaded.data.visit} client={loaded.data.client} previous={loaded.data.previous ?? null} />}
     </section>
   );
 }
@@ -266,7 +378,7 @@ type Step = "case" | "rubrics" | "remedy";
 // Remembered per visit for this page load, so coming back from reading a remedy lands on the same step.
 const visitStep = new Map<string, Step>();
 
-function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visit; client: { id: string; name: string } }) {
+function VisitEditor({ rep, visit, client, previous }: { rep: LoadedRepertory; visit: Visit; client: { id: string; name: string }; previous: PreviousVisit | null }) {
   // Rubrics are saved by path. Paths the current repertory file no longer has are kept, shown and saved again unchanged.
   const [initial] = useState(() => {
     const found: Rubric[] = [];
@@ -285,6 +397,10 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
   const [date, setDate] = useState(visit.date);
   const [notes, setNotes] = useState(visit.notes);
   const [remedy, setRemedy] = useState(visit.remedy);
+  const [potency, setPotency] = useState(visit.potency ?? "");
+  const [dosing, setDosing] = useState(visit.dosing ?? "");
+  const [response, setResponse] = useState<Response>(visit.response ?? "");
+  const [responseNotes, setResponseNotes] = useState(visit.responseNotes ?? "");
   const [kind, setKind] = useState<VisitKind>(visit.kind ?? "acute");
   const [answers, setAnswers] = useState<Record<string, string>>(visit.answers ?? {});
   const [state, setState] = useState<SaveState>("saved");
@@ -295,7 +411,10 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
     window.scrollTo({ top: 0 });
   };
 
-  const payload = { date, data: { rubrics: [...rubricsState.map((r) => r.path), ...initial.missing], method, notes, remedy, kind, answers } };
+  const payload = {
+    date,
+    data: { rubrics: [...rubricsState.map((r) => r.path), ...initial.missing], method, notes, remedy, potency, dosing, response, responseNotes, kind, answers },
+  };
   const pending = useRef<string | null>(null);
   const first = useRef(true);
   const serialized = JSON.stringify(payload);
@@ -347,10 +466,10 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
   const answered = FORMS[kind].flatMap((s) => s.questions).filter((q) => answers[q.id]?.trim() || answers[`${q.id}-more`]?.trim()).length;
   const ranked = useMemo(() => repertorize(rep.rankData, rubrics.map((r) => r.id), method), [rep.rankData, rubrics.map((r) => r.id).join(","), method]);
 
-  const steps: { id: Step; title: string; note: string }[] = [
-    { id: "case", title: "1 · Case", note: `${answered} answer${answered === 1 ? "" : "s"}` },
-    { id: "rubrics", title: "2 · Rubrics", note: `${rubrics.length} in the case${waiting ? `, ${waiting} suggested` : ""}` },
-    { id: "remedy", title: "3 · Remedy", note: remedy || "Not chosen yet" },
+  const steps: { id: Step; title: string; note: string; icon: ReactNode }[] = [
+    { id: "case", title: "1 · Case", note: `${answered} answer${answered === 1 ? "" : "s"}`, icon: <ClipboardList size={20} aria-hidden="true" /> },
+    { id: "rubrics", title: "2 · Rubrics", note: `${rubrics.length} in the case${waiting ? `, ${waiting} suggested` : ""}`, icon: <ListTree size={20} aria-hidden="true" /> },
+    { id: "remedy", title: "3 · Remedy", note: prescription({ remedy, potency }) || "Not chosen yet", icon: <Pill size={20} aria-hidden="true" /> },
   ];
   const at = steps.findIndex((s) => s.id === step);
   const nav = (
@@ -398,6 +517,9 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
             ))}
           </select>
           <p className="muted small">Changing the type changes the questions. Answers already written are kept.</p>
+          <a href={`#/visits/${visit.id}/report`}>
+            <Printer size={15} aria-hidden="true" /> Case report to print
+          </a>
           <button
             type="button"
             className="danger-item"
@@ -409,7 +531,7 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
                 .catch((e: Error) => setState({ error: e.message }));
             }}
           >
-            Delete visit…
+            <Trash2 size={15} aria-hidden="true" /> Delete visit…
           </button>
         </MoreMenu>
       </div>
@@ -417,11 +539,49 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
       <div className="visit-steps" role="tablist" aria-label="Visit steps">
         {steps.map((s, i) => (
           <button key={s.id} type="button" role="tab" aria-selected={s.id === step} className={i < at ? "done" : undefined} onClick={() => setStep(s.id)}>
-            <b>{s.title}</b>
-            <span>{s.note}</span>
+            <span className="step-icon">{s.icon}</span>
+            <span className="step-text">
+              <b>{s.title}</b>
+              <span>{s.note}</span>
+            </span>
           </button>
         ))}
       </div>
+
+      {step === "case" && (kind === "followup" || previous?.remedy || response) && (
+        <section className="since-last">
+          <h2>
+            <TrendingUp size={18} aria-hidden="true" /> Since the last remedy
+          </h2>
+          {previous?.remedy ? (
+            <p className="muted">
+              Last visit {shortDate(previous.date)}: <b className="rx-inline">{prescription(previous)}</b>
+              {previous.dosing && ` · ${previous.dosing}`}
+            </p>
+          ) : (
+            <p className="muted">No remedy was recorded at the last visit.</p>
+          )}
+          <div className="segmented response-pick" role="radiogroup" aria-label="Response to the last remedy">
+            {RESPONSES.filter((r): r is Exclude<Response, ""> => r !== "").map((r) => (
+              <button key={r} type="button" role="radio" aria-checked={response === r} className={`r-${r}`} onClick={() => setResponse(response === r ? "" : r)}>
+                <ResponseIcon response={r} /> {RESPONSE_LABEL[r]}
+              </button>
+            ))}
+          </div>
+          <label htmlFor="response-notes" className="visually-hidden">
+            How they responded
+          </label>
+          <textarea
+            id="response-notes"
+            className="visit-notes"
+            value={responseNotes}
+            onChange={(e) => setResponseNotes(e.target.value)}
+            maxLength={5000}
+            rows={2}
+            placeholder="What changed: energy, sleep, mood, the main complaint, any return of old symptoms"
+          />
+        </section>
+      )}
 
       {step === "case" && (
         <div className="visit-layout">
@@ -485,10 +645,31 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
       {step === "remedy" && (
         <>
           <CaseResults rep={rep} rubrics={rubrics} setRubrics={setRubrics} method={method} setMethod={setMethod} chosen={remedy} onChoose={setRemedy} />
-          <div className="controls remedy-chosen">
-            <label htmlFor="visit-remedy">Remedy chosen</label>
-            <input id="visit-remedy" value={remedy} onChange={(e) => setRemedy(e.target.value)} maxLength={200} autoComplete="off" placeholder="Choose above, or type one" />
-          </div>
+          <section className="rx-card">
+            <h2>
+              <Pill size={20} aria-hidden="true" /> Prescription
+            </h2>
+            <div className="rx-fields">
+              <label>
+                <span>Remedy</span>
+                <input id="visit-remedy" value={remedy} onChange={(e) => setRemedy(e.target.value)} maxLength={200} autoComplete="off" placeholder="Choose above, or type one" />
+              </label>
+              <label>
+                <span>Potency</span>
+                <input list="potencies" value={potency} onChange={(e) => setPotency(e.target.value)} maxLength={40} autoComplete="off" placeholder="e.g. 200C" />
+                <datalist id="potencies">
+                  {POTENCIES.map((p) => (
+                    <option key={p} value={p} />
+                  ))}
+                </datalist>
+              </label>
+              <label className="wide-field">
+                <span>How given</span>
+                <input value={dosing} onChange={(e) => setDosing(e.target.value)} maxLength={500} autoComplete="off" placeholder="Your own words, e.g. one dose, then wait" />
+              </label>
+            </div>
+            <p className="muted small">Your record of what you gave. The app never suggests a potency or dose.</p>
+          </section>
         </>
       )}
 
