@@ -165,17 +165,21 @@ function NotesImport() {
       if (!row.include || row.sourceId) continue;
       try {
         update(i, { status: "Reading the text…", failed: false });
-        const text = await extractText(row.file);
+        const { text, recognized } = await extractText(row.file, (status) => update(i, { status }));
         if (text.replace(/\[Pg \d+\]/g, "").trim().length < 40) {
-          update(i, { status: "No text found. It is probably scanned images or slides without text.", failed: true });
+          update(i, { status: "No readable text found, even with text recognition.", failed: true });
           continue;
         }
         const bytes = new TextEncoder().encode(text) as Uint8Array<ArrayBuffer>;
         const name = row.file.name.replace(/\.[^.]+$/, "") + ".txt";
-        const result = await importText(window.location.origin, { bytes, name }, notesMetadata(row.file.name, author.trim() || "Course notes"), {
-          progress: (done, total) => update(i, { status: `Importing ${done}/${total} passages…` }),
-        });
-        if (result.kind === "complete") update(i, { status: `Imported, ${result.passages} passages.`, sourceId: result.sourceId });
+        const result = await importText(window.location.origin, { bytes, name }, notesMetadata(row.file.name, author.trim() || "Course notes"),
+          { progress: (done, total) => update(i, { status: `Importing ${done}/${total} passages…` }) },
+          {},
+          recognized
+            ? [{ kind: "uncertain_ocr", severity: "warning", detail: `${recognized} scanned page(s) or picture(s) were read by text recognition; some words may be misread.` }]
+            : [],
+        );
+        if (result.kind === "complete") update(i, { status: `Imported, ${result.passages} passages${recognized ? " (text recognition)" : ""}.`, sourceId: result.sourceId });
         else if (result.kind === "duplicate") update(i, { status: "Already in the library.", sourceId: result.sourceId });
         else update(i, { status: `Failed: ${result.error}`, failed: true });
       } catch (err) {
@@ -192,7 +196,7 @@ function NotesImport() {
       <p className="muted">
         Choose Word (.docx) or PDF files, as many as you like. The text is read here in the browser and added to the library as
         Notes, kept apart from the books and searchable with them. Case files and blank forms are left out unless you tick them.
-        Old .doc files and slide decks (.pptx) can't be read; save them as .docx or PDF first.
+        Scanned pages and pictures are read with text recognition, which is slower (about a page every few seconds) and can misread some words. Old .doc files and slide decks (.pptx) can't be read; save them as .docx or PDF first.
       </p>
       <form className="import" onSubmit={run}>
         <label>
