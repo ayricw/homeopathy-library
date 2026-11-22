@@ -1,8 +1,30 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import {
+  Bookmark,
+  BookOpen,
+  GitCompare,
+  History,
+  Library,
+  ListTree,
+  NotebookPen,
+  Pencil,
+  Search,
+  Sparkles,
+  Star,
+  Trash2,
+  Upload,
+  Users,
+  X,
+} from "lucide-react";
 import { reflow } from "../shared/text";
 import { ImportPage } from "./ImportPage";
 import { AboutPage, HomePage, Logo } from "./HomePage";
 import { ClientPage, ClientsPage, VisitPage } from "./ClientsPages";
+import { VisitReport } from "./ReportPage";
+import { ComparePage, FamiliesTab, RemediesTab, RemedyPage, remedyHref } from "./RemediesPages";
+import { familyView } from "../shared/remedies";
+import { explain, plainIndex, searchPlain, type PlainHit } from "../shared/plain";
+import { KingdomIcon, EmptyState } from "./ui";
 import { excerpt, formatReferences, groupBySource, isCollected, useCollected, type CollectedItem } from "./collect";
 import {
   ancestry,
@@ -19,8 +41,8 @@ import {
   type Rubric,
   type RubricTree,
 } from "../shared/repertory";
-import { get, post, type SymptomResponse, type PassageRef, type PassageResponse, type SearchResponse, type Source, type SourceDetail } from "./api";
-import { flagEntry, loadBooks, mergedRepertory, setBooksOn, useBookStore, type BooksView } from "./books";
+import { get, post, send, type SymptomResponse, type PassageRef, type PassageResponse, type SearchResponse, type Source, type SourceDetail } from "./api";
+import { flagEntry, loadBooks, mergedRepertory, removeAddition, saveAddition, setBooksOn, useBookStore, type BooksView, type MyMarks } from "./books";
 import type { BookMark } from "../shared/bookrubrics";
 
 // ---------- tiny hash router: #/search?q=..  #/passage/12  #/sources  #/sources/id ----------
@@ -80,15 +102,19 @@ export function App() {
   else if (path === "/sources") page = <SourcesPage />;
   else if (path === "/import") page = <ImportPage />;
   else if (path === "/collected") page = <CollectedPage />;
-  else if (path === "/symptoms") page = <SymptomsPage />;
+  else if (path === "/symptoms") page = <SymptomsPage params={params} />;
   else if (path === "/clients") page = <ClientsPage config={config.data} />;
   else if ((m = path.match(/^\/clients\/([0-9a-f-]{36})$/))) page = <ClientPage id={m[1]} config={config.data} />;
   else if ((m = path.match(/^\/visits\/([0-9a-f-]{36})$/))) page = <VisitPage id={m[1]} config={config.data} />;
+  else if ((m = path.match(/^\/visits\/([0-9a-f-]{36})\/report$/))) page = <VisitReport id={m[1]} config={config.data} />;
+  else if ((m = path.match(/^\/remedy\/(.+)$/))) page = <RemedyPage abbrev={decodeURIComponent(m[1])} />;
+  else if (path === "/compare") page = <ComparePage params={params} />;
   else if (path === "/search") page = <SearchPage params={params} />;
   else if (path === "/about") page = <AboutPage />;
   else page = <HomePage config={config.data} collected={collected.items.length} />;
   const section = (p: string) => (path === p || path.startsWith(`${p}/`) ? "page" : undefined);
   const inClients = path.startsWith("/clients") || path.startsWith("/visits");
+  const inRemedies = path.startsWith("/remedy") || path === "/compare";
 
   return (
     <>
@@ -99,30 +125,36 @@ export function App() {
         </a>
         <nav>
           <a href="#/search" aria-current={section("/search") ?? (path.startsWith("/passage") ? "page" : undefined)}>
+            <BookOpen size={17} aria-hidden="true" />
             Materia medica
           </a>
           {config.data?.clients && (
             <a href="#/clients" aria-current={inClients ? "page" : undefined}>
+              <Users size={17} aria-hidden="true" />
               Clients
             </a>
           )}
-          <a href="#/symptoms" aria-current={section("/symptoms")}>
+          <a href="#/symptoms" aria-current={section("/symptoms") ?? (inRemedies ? "page" : undefined)}>
+            <ListTree size={17} aria-hidden="true" />
             Repertory
           </a>
           <a href="#/sources" aria-current={section("/sources")}>
+            <Library size={17} aria-hidden="true" />
             Library
           </a>
           <a href="#/collected" aria-current={section("/collected")}>
+            <Bookmark size={17} aria-hidden="true" />
             Saved passages{collected.items.length > 0 && <span className="count-pill">{collected.items.length}</span>}
           </a>
           {config.data?.allowImports && (
             <a href="#/import" aria-current={section("/import")}>
+              <Upload size={17} aria-hidden="true" />
               Import
             </a>
           )}
         </nav>
       </header>
-      <main>{page}</main>
+      <main key={path}>{page}</main>
       <footer className="notice">
         Historical and traditional texts, not medical advice. <a href="#/about">About this library</a>
       </footer>
@@ -188,6 +220,33 @@ function CollectButton({ item }: { item: CollectedItem }) {
 
 // ---------- search ----------
 
+// Recent materia medica searches, on this device only. The words are already in the page address
+// (and so in the browser history); nothing about a client is searched here.
+const RECENT_KEY = "recentSearches";
+export function readRecent(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 8) : [];
+  } catch {
+    return [];
+  }
+}
+function rememberSearch(q: string) {
+  try {
+    const next = [q, ...readRecent().filter((x) => x !== q)].slice(0, 8);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  } catch {
+    // Storage can be blocked; recent searches are only a convenience.
+  }
+}
+function forgetSearches() {
+  try {
+    localStorage.removeItem(RECENT_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 function SearchPage({ params }: { params: URLSearchParams }) {
   const q = params.get("q") ?? "";
   const filters = { source: params.get("source") ?? "", author: params.get("author") ?? "", edition: params.get("edition") ?? "" };
@@ -199,6 +258,13 @@ function SearchPage({ params }: { params: URLSearchParams }) {
   const qs = new URLSearchParams({ q, ...filters, offset: String(offset) });
   for (const [k, v] of [...qs]) if (!v) qs.delete(k);
   const results = useFetch<SearchResponse>(q.trim() ? `/api/search?${qs}` : null);
+  const [recent, setRecent] = useState(readRecent);
+  useEffect(() => {
+    if (q.trim()) {
+      rememberSearch(q.trim());
+      setRecent(readRecent());
+    }
+  }, [q]);
 
   const all = sources.data?.sources ?? [];
   const authors = [...new Set(all.map((s) => s.author))].sort();
@@ -212,20 +278,45 @@ function SearchPage({ params }: { params: URLSearchParams }) {
 
   return (
     <section>
+      <div className="page-head">
+        <span className="page-icon">
+          <BookOpen />
+        </span>
+        <div>
+          <h1>Materia medica</h1>
+          <p className="muted">Search every book and note in the library, word for word.</p>
+        </div>
+      </div>
       <form className="search" onSubmit={submit} role="search">
         <label htmlFor="q" className="visually-hidden">
           Search the materia medica
         </label>
-        <input
-          id="q"
-          type="search"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder='Condition, symptom, or remedy. Use "quotes" for a phrase.'
-          autoFocus
-        />
+        <span className="search-field">
+          <Search size={18} className="field-icon" aria-hidden="true" />
+          <input
+            id="q"
+            type="search"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder='Condition, symptom, or remedy. Use "quotes" for a phrase.'
+            autoFocus
+          />
+        </span>
         <button type="submit">Search</button>
       </form>
+      {recent.length > 0 && (
+        <div className="recent-row" aria-label="Recent searches">
+          <History size={15} aria-hidden="true" />
+          {recent.map((r) => (
+            <a key={r} className="chip" href={`#/search?q=${encodeURIComponent(r)}`} aria-current={r === q ? "true" : undefined}>
+              {r}
+            </a>
+          ))}
+          <button type="button" className="link small" onClick={() => (forgetSearches(), setRecent([]))}>
+            Clear
+          </button>
+        </div>
+      )}
 
       {(all.length > 1 || editions.length > 0) && (
       <div className="filters">
@@ -387,6 +478,7 @@ function PassagePage({ id, q }: { id: string; q: string }) {
           </aside>
         )}
       </section>
+      <MarginNotes passageId={p.id} initial={data.notes ?? []} />
       {data.after.map((c) => (
         <Context key={c.id} p={c} q={q} current={p}>
           {show(c.text)}
@@ -394,6 +486,102 @@ function PassagePage({ id, q }: { id: string; q: string }) {
       ))}
       <p className="attribution">{s.attribution}</p>
     </article>
+  );
+}
+
+type PassageNote = { id: number; note: string; created_at: string; updated_at: string };
+
+/** Robyn's notes in the margin of a passage, stored with the library. About the book, never a client. */
+function MarginNotes({ passageId, initial }: { passageId: number; initial: PassageNote[] }) {
+  const [notes, setNotes] = useState(initial);
+  const [draft, setDraft] = useState("");
+  const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
+  const [error, setError] = useState<string>();
+  const run = async (fn: () => Promise<void>) => {
+    setError(undefined);
+    try {
+      await fn();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  return (
+    <aside className="margin-notes" aria-label="My notes on this passage">
+      <h2>
+        <NotebookPen size={18} aria-hidden="true" /> My notes
+      </h2>
+      {notes.map((n) =>
+        editing?.id === n.id ? (
+          <form
+            key={n.id}
+            className="note-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(async () => {
+                await send("PUT", `/api/passage-notes/${n.id}`, { note: editing.text });
+                setNotes(notes.map((x) => (x.id === n.id ? { ...x, note: editing.text.trim() } : x)));
+                setEditing(null);
+              });
+            }}
+          >
+            <textarea value={editing.text} onChange={(e) => setEditing({ id: n.id, text: e.target.value })} rows={3} maxLength={5000} autoFocus />
+            <div className="note-actions">
+              <button type="submit" disabled={!editing.text.trim()}>
+                Save
+              </button>
+              <button type="button" className="secondary" onClick={() => setEditing(null)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div key={n.id} className="note">
+            <p>{n.note}</p>
+            <div className="note-actions">
+              <span className="muted small">{n.updated_at.slice(0, 10)}</span>
+              <button type="button" className="icon-btn" aria-label="Edit note" onClick={() => setEditing({ id: n.id, text: n.note })}>
+                <Pencil size={15} />
+              </button>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="Delete note"
+                onClick={() =>
+                  void run(async () => {
+                    await send("DELETE", `/api/passage-notes/${n.id}`);
+                    setNotes(notes.filter((x) => x.id !== n.id));
+                  })
+                }
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
+          </div>
+        ),
+      )}
+      <form
+        className="note-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void run(async () => {
+            const { note } = await send<{ note: PassageNote }>("POST", "/api/passage-notes", { passageId, note: draft });
+            setNotes([...notes, note]);
+            setDraft("");
+          });
+        }}
+      >
+        <label htmlFor="new-note" className="visually-hidden">
+          Add a note
+        </label>
+        <textarea id="new-note" value={draft} onChange={(e) => setDraft(e.target.value)} rows={2} maxLength={5000} placeholder="Add a note in the margin (about the book, not a client)" />
+        <div className="note-actions">
+          <button type="submit" disabled={!draft.trim()}>
+            Add note
+          </button>
+        </div>
+      </form>
+      {error && <p className="error small">{error}</p>}
+    </aside>
   );
 }
 
@@ -413,10 +601,16 @@ function Context({ p, q, current, children }: { p: PassageRef; q: string; curren
 // Symptoms and chosen rubrics live only in memory: never in the URL, browser storage or the server.
 // They survive moving between pages and are gone when the tab is closed or reloaded.
 
+type RepertoryTab = "repertory" | "remedies" | "families" | "books";
+const REPERTORY_TABS: RepertoryTab[] = ["repertory", "remedies", "families", "books"];
+
+/** Words found with Find in the repertory this session: kept in page memory only, gone on reload. */
+const pastFinds: string[] = [];
+
 const caseMemory: {
   rubrics: Rubric[];
   method: "symptoms" | "grades";
-  tab: "repertory" | "books";
+  tab: RepertoryTab;
   mode: "browse" | "find";
   /** Path of the open level in Browse, or null for the chapter list. */
   browseAt: string | null;
@@ -436,6 +630,8 @@ export type LoadedRepertory = {
   tokens: string[][];
   tree: RubricTree;
   books: BooksView | null;
+  /** Robyn's own additions, by rubric id then remedy index. */
+  mine: MyMarks;
 };
 
 // The repertory file is loaded once per page load and searched in the browser.
@@ -477,36 +673,56 @@ export function useRepertory(): { rep?: LoadedRepertory | null; error?: string }
   return { rep, error: state.error };
 }
 
-function SymptomsPage() {
+function SymptomsPage({ params }: { params: URLSearchParams }) {
   const rep = useRepertory();
-  const [tab, setTab] = useState(caseMemory.tab);
-  const choose = (t: typeof tab) => {
+  const asked = params.get("tab") as RepertoryTab | null;
+  const [tab, setTab] = useState<RepertoryTab>(asked && REPERTORY_TABS.includes(asked) ? asked : caseMemory.tab);
+  useEffect(() => {
+    if (asked && REPERTORY_TABS.includes(asked)) setTab(asked);
+  }, [asked]);
+  const choose = (t: RepertoryTab) => {
     caseMemory.tab = t;
     setTab(t);
   };
+  const tabs: [RepertoryTab, string, ReactNode][] = [
+    ["repertory", "Rubrics", <ListTree size={16} key="i" />],
+    ["remedies", "Remedies", <Sparkles size={16} key="i" />],
+    ["families", "Families", <KingdomIcon kingdom="Plant" size={16} key="i" />],
+    ["books", "Symptoms in the books", <BookOpen size={16} key="i" />],
+  ];
   return (
     <section className="wide">
-      <h1>Repertory</h1>
-      <div className="tabs" role="tablist">
-        <button type="button" role="tab" aria-selected={tab === "repertory"} onClick={() => choose("repertory")}>
-          Rubrics
-        </button>
-        <button type="button" role="tab" aria-selected={tab === "books"} onClick={() => choose("books")}>
-          Symptoms in the books
-        </button>
+      <div className="page-head">
+        <span className="page-icon">
+          <ListTree />
+        </span>
+        <div>
+          <h1>Repertory</h1>
+          <p className="muted">Build a case from rubrics, look up any remedy, or explore remedies by family.</p>
+        </div>
       </div>
-      {tab === "repertory" ? (
-        rep.error ? (
-          <p className="error">The repertory could not be loaded: {rep.error}</p>
-        ) : rep.rep === undefined ? (
-          <p className="muted">Loading the repertory…</p>
-        ) : rep.rep === null ? (
-          <p className="muted">No repertory is included in this deployment yet. See README.md for how to add one.</p>
-        ) : (
-          <MemoryCase rep={rep.rep} />
-        )
-      ) : (
+      <div className="tabs" role="tablist">
+        {tabs.map(([t, label, icon]) => (
+          <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => choose(t)}>
+            {icon}
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === "books" ? (
         <BookSymptoms />
+      ) : rep.error ? (
+        <p className="error">The repertory could not be loaded: {rep.error}</p>
+      ) : rep.rep === undefined ? (
+        <p className="muted">Loading the repertory…</p>
+      ) : rep.rep === null ? (
+        <p className="muted">No repertory is included in this deployment yet. See README.md for how to add one.</p>
+      ) : tab === "remedies" ? (
+        <RemediesTab rep={rep.rep} />
+      ) : tab === "families" ? (
+        <FamiliesTab rep={rep.rep} params={params} />
+      ) : (
+        <MemoryCase rep={rep.rep} />
       )}
     </section>
   );
@@ -514,23 +730,32 @@ function SymptomsPage() {
 
 const GRADE_LABEL = ["", "grade 1", "grade 2", "grade 3", "grade 4"];
 
-function RubricRemedies({ data, id, books }: { data: RepertoryFile; id: number; books: BooksView | null }) {
+function RubricRemedies({ data, id, books, mine }: { data: RepertoryFile; id: number; books: BooksView | null; mine: MyMarks }) {
   const list = rubricRemedies(data, id);
   const marks = books?.marks.get(id);
   const added = new Set([...(marks ?? [])].filter(([, m]) => m.some((x) => x.added)).map(([r]) => data.remedies[r][0]));
+  const myMarks = mine.get(id);
+  const myAbbrevs = new Map([...(myMarks ?? [])].map(([r, m]) => [data.remedies[r][0], m]));
   return (
     <>
       <p className="rubric-remedies">
-        {list.map((r, i) => (
-          <span
-            key={r.abbrev}
-            className={`g${r.grade}${added.has(r.abbrev) ? " book-added" : ""}`}
-            title={added.has(r.abbrev) ? `${r.name}, added from the books` : `${r.name}, ${GRADE_LABEL[r.grade]}`}
-          >
-            {r.abbrev}
-            {i < list.length - 1 ? ", " : ""}
-          </span>
-        ))}
+        {list.map((r, i) => {
+          const m = myAbbrevs.get(r.abbrev);
+          const title = m
+            ? `${r.name}: ${m.added ? "added by you" : "you confirmed it"}, grade ${m.addition.grade}${m.addition.note ? `. ${m.addition.note}` : ""}`
+            : added.has(r.abbrev)
+              ? `${r.name}, added from the books`
+              : `${r.name}, ${GRADE_LABEL[r.grade]}`;
+          return (
+            <span key={r.abbrev}>
+              <a href={remedyHref(r.abbrev)} className={`g${r.grade}${added.has(r.abbrev) ? " book-added" : ""}${m ? " mine" : ""}`} title={title}>
+                {m && <Star size={11} aria-hidden="true" />}
+                {r.abbrev}
+              </a>
+              {i < list.length - 1 ? ", " : ""}
+            </span>
+          );
+        })}
       </p>
       {marks && marks.size > 0 && (
         <BookQuotes
@@ -539,7 +764,92 @@ function RubricRemedies({ data, id, books }: { data: RepertoryFile; id: number; 
           summary={`What the books say here (${[...marks.values()].reduce((n, m) => n + m.length, 0)})`}
         />
       )}
+      <MyAddition data={data} id={id} mine={myMarks} />
     </>
+  );
+}
+
+/** Adding a remedy to a rubric from Robyn's own experience, and removing her additions. */
+function MyAddition({ data, id, mine }: { data: RepertoryFile; id: number; mine?: MyMarks extends Map<number, infer V> ? V : never }) {
+  const [open, setOpen] = useState(false);
+  const [remedy, setRemedy] = useState("");
+  const [grade, setGrade] = useState(1);
+  const [note, setNote] = useState("");
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const path = data.rubrics[id][0];
+  const listId = `remedy-names-${id}`;
+  const pick = () => {
+    const q = remedy.trim().toLowerCase();
+    return data.remedies.find(([a, n]) => n.toLowerCase() === q || a.toLowerCase() === q || a.toLowerCase().replace(/\.$/, "") === q);
+  };
+  const save = async () => {
+    const r = pick();
+    if (!r) return setError("Pick a remedy from the list.");
+    setBusy(true);
+    setError(undefined);
+    try {
+      await saveAddition(path, r[0], grade, note);
+      setRemedy("");
+      setNote("");
+      setOpen(false);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="my-addition">
+      {mine && mine.size > 0 && (
+        <ul className="mine-list">
+          {[...mine].map(([r, m]) => (
+            <li key={m.addition.id}>
+              <Star size={13} aria-hidden="true" /> <b>{data.remedies[r][1]}</b> · grade {m.addition.grade}
+              {m.addition.note && <span className="muted"> · {m.addition.note}</span>}
+              <button type="button" className="icon-btn" aria-label={`Remove your addition of ${data.remedies[r][1]}`} onClick={() => removeAddition(m.addition.id).catch((e: Error) => setError(e.message))}>
+                <X size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {!open ? (
+        <button type="button" className="link add-mine" onClick={() => setOpen(true)}>
+          <Star size={13} aria-hidden="true" /> Add a remedy from my experience
+        </button>
+      ) : (
+        <form
+          className="mine-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void save();
+          }}
+        >
+          <input list={listId} value={remedy} onChange={(e) => setRemedy(e.target.value)} placeholder="Remedy" aria-label="Remedy" autoFocus />
+          <datalist id={listId}>
+            {data.remedies.map(([a, n]) => (
+              <option key={a} value={n}>
+                {a}
+              </option>
+            ))}
+          </datalist>
+          <select value={grade} onChange={(e) => setGrade(Number(e.target.value))} aria-label="Grade">
+            <option value={1}>Grade 1</option>
+            <option value={2}>Grade 2</option>
+            <option value={3}>Grade 3</option>
+          </select>
+          <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="Why (optional, not about a client)" aria-label="Note" />
+          <button type="submit" disabled={busy || !remedy.trim()}>
+            Save
+          </button>
+          <button type="button" className="secondary" onClick={() => setOpen(false)}>
+            Cancel
+          </button>
+        </form>
+      )}
+      {error && <p className="error small">{error}</p>}
+    </div>
   );
 }
 
@@ -677,12 +987,19 @@ export function RepertoryCase({
   );
 }
 
+// Built once per repertory file, the first time everyday words are searched.
+let plainCache: { data: RepertoryFile; index: string[][] } | null = null;
+const getPlainIndex = (data: RepertoryFile) => {
+  if (plainCache?.data !== data) plainCache = { data, index: plainIndex(data) };
+  return plainCache.index;
+};
+
 /** The rubrics still in the current repertory file; a newer file can drop or move some. */
 export const liveRubrics = (data: RepertoryFile, rubrics: Rubric[]) => rubrics.filter((r) => data.rubrics[r.id]?.[0] === r.path);
 
 /** Browse the tree or find a rubric by its words, and add it to the case. */
 export function RubricPicker({
-  rep: { data: rep, tokens, tree, books },
+  rep: { data: rep, tokens, tree, books, mine },
   rubrics,
   setRubrics,
 }: {
@@ -706,6 +1023,45 @@ export function RubricPicker({
     setBrowsePath(path);
   };
   const found = useMemo(() => (query ? searchRubrics(rep, tokens, query, 40) : null), [rep, tokens, query]);
+  // Close matches in everyday words, when the exact words find few rubrics.
+  const close = useMemo<PlainHit[]>(() => {
+    if (!query || (found && found.length >= 12)) return [];
+    const exact = new Set(found?.map((r) => r.id));
+    return searchPlain(rep, getPlainIndex(rep), query, 40).filter((r) => !exact.has(r.id));
+  }, [rep, query, found]);
+  const [finds, setFinds] = useState<string[]>(pastFinds.slice());
+  const runFind = (q: string) => {
+    const t = q.trim();
+    setDraft(t);
+    setQuery(t);
+    if (!t) return;
+    const i = pastFinds.indexOf(t);
+    if (i >= 0) pastFinds.splice(i, 1);
+    pastFinds.unshift(t);
+    pastFinds.length = Math.min(pastFinds.length, 8);
+    setFinds(pastFinds.slice());
+  };
+  const RubricHit = ({ r }: { r: Rubric }) => {
+    const inCase = ids.includes(r.id);
+    return (
+      <li>
+        <div className="rubric-row">
+          <button type="button" className="link" aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)}>
+            {r.path}
+          </button>
+          <BookTag books={books} id={r.id} />
+          <span className="muted count">{r.remedyCount}</span>
+          <button type="button" className="secondary small-btn" onClick={() => (goTo(tree.byPath.get(r.path) ?? null), setMode("browse"))}>
+            In tree
+          </button>
+          <button type="button" className={`collect${inCase ? " on" : ""}`} disabled={inCase || full} onClick={() => add(r)}>
+            {inCase ? "Added ✓" : "Add"}
+          </button>
+        </div>
+        {open === r.id && <RubricRemedies data={rep} id={r.id} books={books} mine={mine} />}
+      </li>
+    );
+  };
   const ids = rubrics.map((r) => r.id);
   const full = rubrics.length >= MAX_CASE_RUBRICS;
   const add = (r: Rubric) => !ids.includes(r.id) && !full && setRubrics([...rubrics, r]);
@@ -721,7 +1077,7 @@ export function RubricPicker({
         </button>
       </div>
       {mode === "browse" ? (
-        <RubricBrowser data={rep} books={books} tree={tree} at={browseAt} goTo={goTo} ids={ids} full={full} add={add} />
+        <RubricBrowser data={rep} books={books} mine={mine} tree={tree} at={browseAt} goTo={goTo} ids={ids} full={full} add={add} />
       ) : (
         <>
           <form
@@ -729,48 +1085,58 @@ export function RubricPicker({
             role="search"
             onSubmit={(e) => {
               e.preventDefault();
-              setQuery(draft.trim());
+              runFind(draft);
             }}
           >
             <label htmlFor="rubric-q" className="visually-hidden">
               Find a rubric
             </label>
-            <input
-              id="rubric-q"
-              type="search"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="e.g. anxiety night, or restless* (* matches word endings)"
-            />
+            <span className="search-field">
+              <Search size={18} className="field-icon" aria-hidden="true" />
+              <input
+                id="rubric-q"
+                type="search"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="Repertory words or everyday words, e.g. can't sleep after midnight"
+              />
+            </span>
             <button type="submit">Find</button>
           </form>
+          {finds.length > 0 && (
+            <div className="recent-row" aria-label="Recent finds">
+              <History size={15} aria-hidden="true" />
+              {finds.map((f) => (
+                <button key={f} type="button" className="chip" onClick={() => runFind(f)}>
+                  {f}
+                </button>
+              ))}
+            </div>
+          )}
 
           {query && (
             <div className="rubric-results">
-              {found && found.length === 0 && <p className="muted">No rubric contains all of those words.</p>}
-              <ul className="rubric-list">
-                {found?.map((r) => {
-                  const inCase = ids.includes(r.id);
-                  return (
-                    <li key={r.id}>
-                      <div className="rubric-row">
-                        <button type="button" className="link" aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)}>
-                          {r.path}
-                        </button>
-                        <BookTag books={books} id={r.id} />
-                        <span className="muted count">{r.remedyCount}</span>
-                        <button type="button" className="secondary small-btn" onClick={() => (goTo(tree.byPath.get(r.path) ?? null), setMode("browse"))}>
-                          In tree
-                        </button>
-                        <button type="button" className={`collect${inCase ? " on" : ""}`} disabled={inCase || full} onClick={() => add(r)}>
-                          {inCase ? "Added ✓" : "Add"}
-                        </button>
-                      </div>
-                      {open === r.id && <RubricRemedies data={rep} id={r.id} books={books} />}
-                    </li>
-                  );
-                })}
-              </ul>
+              {found && found.length === 0 && close.length === 0 && <p className="muted">No rubric matches those words, even in everyday terms.</p>}
+              {found && found.length > 0 && (
+                <ul className="rubric-list">
+                  {found.map((r) => (
+                    <RubricHit key={r.id} r={r} />
+                  ))}
+                </ul>
+              )}
+              {close.length > 0 && (
+                <>
+                  <h3 className="close-head">
+                    <Sparkles size={16} aria-hidden="true" /> Close matches in everyday words
+                    <span className="muted small"> · searching for {explain(query).join(", ")}</span>
+                  </h3>
+                  <ul className="rubric-list">
+                    {close.map((r) => (
+                      <RubricHit key={r.id} r={r} />
+                    ))}
+                  </ul>
+                </>
+              )}
             </div>
           )}
         </>
@@ -847,6 +1213,8 @@ export function CaseResults({
   const top = ranked.slice(0, 5);
   const [grid, setGrid] = useState(false);
   const remove = (id: number) => setRubrics(rubrics.filter((r) => r.id !== id));
+  const families = useMemo(() => familyView(ranked.slice(0, 60)), [ranked]);
+  const compareTop = `#/compare?r=${encodeURIComponent(top.slice(0, 3).map((m) => m.abbrev).join("|"))}`;
 
   return (
     <>
@@ -862,13 +1230,23 @@ export function CaseResults({
         <p className="muted">No rubrics yet. Add some and the remedies that cover them appear here.</p>
       ) : (
         <>
-          <BooksSwitch books={books} />
+          <div className="results-bar">
+            <BooksSwitch books={books} />
+            {top.length > 1 && (
+              <a className="button-link secondary small" href={compareTop}>
+                <GitCompare size={15} aria-hidden="true" /> Compare the top {Math.min(3, top.length)}
+              </a>
+            )}
+          </div>
           <ol className="top-remedies">
             {top.map((m, i) => {
               const adds = bookAdds(m.index);
               return (
               <li key={m.index} className={i === 0 ? "first" : undefined}>
-                <b>{m.name}</b>
+                <span className="rank">{i + 1}</span>
+                <a className="top-name" href={remedyHref(m.abbrev)}>
+                  {m.name}
+                </a>
                 <span className="meter" aria-hidden="true">
                   <i style={{ width: `${(m.covered / rubrics.length) * 100}%` }} />
                 </span>
@@ -895,6 +1273,48 @@ export function CaseResults({
               );
             })}
           </ol>
+          {families.families.length > 0 && (
+            <details className="grid-details">
+              <summary>By family: which kingdoms and families cover the case</summary>
+              <div className="kingdom-bars">
+                {families.kingdoms.map((k) => (
+                  <div key={k.kingdom} className="kingdom-bar">
+                    <span className={`kingdom-badge small k-${k.kingdom.toLowerCase()}`}>
+                      <KingdomIcon kingdom={k.kingdom} size={15} />
+                    </span>
+                    <b>{k.kingdom}</b>
+                    <span className="meter" aria-hidden="true">
+                      <i style={{ width: `${(k.covered / rubrics.length) * 100}%` }} />
+                    </span>
+                    <span className="muted small">
+                      {k.covered}/{rubrics.length} · {k.members} remed{k.members === 1 ? "y" : "ies"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <ol className="family-results">
+                {families.families.slice(0, 8).map((f) => (
+                  <li key={`${f.kingdom}|${f.family}`}>
+                    <div className="fr-head">
+                      <KingdomIcon kingdom={f.kingdom} size={15} />
+                      <b>{f.family}</b>
+                      <span className="muted small">
+                        covers {f.covered} of {rubrics.length}
+                      </span>
+                    </div>
+                    <p className="member-chips">
+                      {f.members.slice(0, 8).map((m) => (
+                        <a key={m.index} className="chip" href={remedyHref(m.abbrev)} title={`${m.name}: ${m.covered} of ${rubrics.length}`}>
+                          {m.name} <small>{m.covered}</small>
+                        </a>
+                      ))}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+              <p className="muted small">Counted over the top 60 remedies. A family can cover the case between its members even when no single remedy does.</p>
+            </details>
+          )}
           <details className="grid-details" open={grid} onToggle={(e) => setGrid(e.currentTarget.open)}>
             <summary>
               Full grid: {ranked.length} remed{ranked.length === 1 ? "y" : "ies"}
@@ -971,6 +1391,7 @@ export function CaseResults({
 function RubricBrowser({
   data,
   books,
+  mine,
   tree,
   at,
   goTo,
@@ -980,6 +1401,7 @@ function RubricBrowser({
 }: {
   data: RepertoryFile;
   books: BooksView | null;
+  mine: MyMarks;
   tree: RubricTree;
   at: number | null;
   goTo: (n: number | null) => void;
@@ -1050,7 +1472,7 @@ function RubricBrowser({
           {addButton(node.id)}
         </div>
       )}
-      {node.id !== null && open === -1 && <RubricRemedies data={data} id={node.id} books={books} />}
+      {node.id !== null && open === -1 && <RubricRemedies data={data} id={node.id} books={books} mine={mine} />}
       {node.children.length > 0 && (
         <>
           <label htmlFor="browse-filter" className="visually-hidden">
@@ -1084,7 +1506,7 @@ function RubricBrowser({
                     {child.id !== null && <span className="muted count">{child.remedyCount}</span>}
                     {child.id !== null && addButton(child.id)}
                   </div>
-                  {open === c && child.id !== null && <RubricRemedies data={data} id={child.id} books={books} />}
+                  {open === c && child.id !== null && <RubricRemedies data={data} id={child.id} books={books} mine={mine} />}
                 </li>
               );
             })}
@@ -1228,10 +1650,21 @@ function CollectedPage() {
 
   return (
     <section>
-      <h1>Saved passages</h1>
-      <p className="muted small">Kept in this browser only. Not for anything about a client.</p>
+      <div className="page-head">
+        <span className="page-icon">
+          <Bookmark />
+        </span>
+        <div>
+          <h1>Saved passages</h1>
+          <p className="muted">Passages you saved (kept in this browser only) and your notes in the margins of the books.</p>
+        </div>
+      </div>
+      <MyNotesList />
+      <h2 className="section-title">
+        <Bookmark size={20} aria-hidden="true" /> Saved in this browser
+      </h2>
       {items.length === 0 ? (
-        <p className="muted">Nothing saved yet. Press Save on a passage to keep it here.</p>
+        <EmptyState icon={<Bookmark />} title="Nothing saved yet" text="Press Save on any passage to keep it here. Not for anything about a client." />
       ) : (
         <>
           <div className="tray-actions">
@@ -1289,6 +1722,36 @@ function CollectedPage() {
         </>
       )}
     </section>
+  );
+}
+
+function MyNotesList() {
+  const notes = useFetch<{
+    notes: { id: number; passage_id: number; note: string; updated_at: string; section: string | null; chapter: string | null; page_start: string | null; title: string }[];
+  }>("/api/passage-notes");
+  if (!notes.data || notes.data.notes.length === 0) return null;
+  return (
+    <>
+      <h2 className="section-title">
+        <NotebookPen size={20} aria-hidden="true" /> My notes in the books <span className="count-pill soft">{notes.data.notes.length}</span>
+      </h2>
+      <ul className="notes-list">
+        {notes.data.notes.map((n) => (
+          <li key={n.id}>
+            <a href={`#/passage/${n.passage_id}`}>
+              <span className="note-where">
+                <b>{n.section ?? n.chapter ?? "Untitled section"}</b>
+                <span className="muted small">
+                  {n.title}
+                  {n.page_start ? `, p. ${n.page_start}` : ""}
+                </span>
+              </span>
+              <span className="note-text">{n.note}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 

@@ -41,7 +41,7 @@ export interface SuggestIndex {
 const OPTIONAL = new Set(["in", "of", "the", "from", "for", "to", "a", "an", "and", "or", "general", "while", "on", "at", "with", "when", "as", "by", "is", "be", "being", "agg's"]);
 
 // Everyday words to the repertory's words. Each entry adds words; it never removes the original.
-const SYNONYMS: Record<string, string[]> = {
+export const SYNONYMS: Record<string, string[]> = {
   worse: ["agg"], worsen: ["agg"], aggravat: ["agg"], aggravated: ["agg"], aggravates: ["agg"],
   better: ["amel"], improve: ["amel"], improved: ["amel"], relieve: ["amel"], relieved: ["amel"], help: ["amel"], helped: ["amel"], eases: ["amel"],
   crave: ["desire"], craving: ["desire"], longs: ["desire"], wants: ["desire"], want: ["desire"], likes: ["desire"],
