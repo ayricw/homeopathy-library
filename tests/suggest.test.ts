@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RepertoryFile } from "../shared/repertory";
-import { buildSuggestIndex, phrasesFromAnswers, suggestRubrics } from "../shared/suggest";
+import { buildSuggestIndex, groupSuggestions, isBroad, phrasesFromAnswers, suggestRubrics } from "../shared/suggest";
 
 const rubrics = [
   "Ear, pain",
@@ -56,5 +56,36 @@ describe("suggested rubrics", () => {
 
   it("skips negated words", () => {
     expect(suggest({ stomach: "Not thirsty at all" })).toEqual([]);
+  });
+});
+
+describe("groupSuggestions", () => {
+  const s = (id: number, path: string, remedyCount: number, question: string) => ({ id, path, remedyCount, from: "", question });
+  const sections = [
+    { title: "Main complaint", questions: [{ id: "main-complaint" }, { id: "worse" }] },
+    { title: "Mind", questions: [{ id: "fears" }] },
+  ];
+
+  it("groups by section in form order and sets broad rubrics apart", () => {
+    const { groups, broad } = groupSuggestions(sections, [
+      s(1, "Mind, fear, dark", 24, "fears"),
+      s(2, "Ear, pain, burning", 102, "main-complaint"),
+      s(3, "Heart, heart", 40, "main-complaint"),
+      s(4, "Generalities, cold, agg.", 200, "worse"),
+      s(5, "Ear, pain, night", 30, "worse-more"),
+      s(6, "Sleep, sleepless, night", 30, "unknown"),
+    ]);
+    expect(groups.map((g) => [g.title, g.items.map((i) => i.id)])).toEqual([
+      ["Main complaint", [2, 5]],
+      ["Mind", [1]],
+      ["Other answers", [6]],
+    ]);
+    expect(broad.map((b) => b.id)).toEqual([3, 4]);
+  });
+
+  it("calls a two-part or very long rubric broad", () => {
+    expect(isBroad({ path: "Mind, restlessness", remedyCount: 20 })).toBe(true);
+    expect(isBroad({ path: "Mind, fear, dark", remedyCount: 151 })).toBe(true);
+    expect(isBroad({ path: "Mind, fear, dark", remedyCount: 24 })).toBe(false);
   });
 });

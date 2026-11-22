@@ -368,3 +368,23 @@ export function suggestRubrics(index: SuggestIndex, phrases: Phrase[], limit = 6
   }
   return out;
 }
+
+/** A rubric too general to help pick a remedy: very many remedies, or only a chapter and one word. */
+export const isBroad = (s: Pick<Suggestion, "path" | "remedyCount">) => s.remedyCount > 150 || s.path.split(", ").length <= 2;
+
+/** Suggestions grouped under the form section their answer came from, in form order. Broad ones are set apart. */
+export function groupSuggestions(sections: { title: string; questions: { id: string }[] }[], suggestions: Suggestion[]) {
+  const sectionOf = new Map<string, number>();
+  sections.forEach((s, i) => s.questions.forEach((q) => sectionOf.set(q.id, i)));
+  const groups = sections.map((s) => ({ title: s.title, items: [] as Suggestion[] }));
+  const other = { title: "Other answers", items: [] as Suggestion[] };
+  const broad: Suggestion[] = [];
+  for (const s of suggestions) {
+    if (isBroad(s)) broad.push(s);
+    else {
+      const i = sectionOf.get(s.question.replace(/-more$/, ""));
+      (i === undefined ? other : groups[i]).items.push(s);
+    }
+  }
+  return { groups: [...groups, other].filter((g) => g.items.length), broad };
+}

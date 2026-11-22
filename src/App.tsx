@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { reflow } from "../shared/text";
 import { ImportPage } from "./ImportPage";
-import { HomePage, Logo } from "./HomePage";
+import { AboutPage, HomePage, Logo } from "./HomePage";
 import { ClientPage, ClientsPage, VisitPage } from "./ClientsPages";
 import { excerpt, formatReferences, groupBySource, isCollected, useCollected, type CollectedItem } from "./collect";
 import {
@@ -83,6 +83,7 @@ export function App() {
   else if ((m = path.match(/^\/clients\/([0-9a-f-]{36})$/))) page = <ClientPage id={m[1]} config={config.data} />;
   else if ((m = path.match(/^\/visits\/([0-9a-f-]{36})$/))) page = <VisitPage id={m[1]} config={config.data} />;
   else if (path === "/search") page = <SearchPage params={params} />;
+  else if (path === "/about") page = <AboutPage />;
   else page = <HomePage config={config.data} collected={collected.items.length} />;
   const section = (p: string) => (path === p || path.startsWith(`${p}/`) ? "page" : undefined);
   const inClients = path.startsWith("/clients") || path.startsWith("/visits");
@@ -96,7 +97,7 @@ export function App() {
         </a>
         <nav>
           <a href="#/search" aria-current={section("/search") ?? (path.startsWith("/passage") ? "page" : undefined)}>
-            Search
+            Materia medica
           </a>
           {config.data?.clients && (
             <a href="#/clients" aria-current={inClients ? "page" : undefined}>
@@ -104,13 +105,13 @@ export function App() {
             </a>
           )}
           <a href="#/symptoms" aria-current={section("/symptoms")}>
-            Symptoms
+            Repertory
           </a>
           <a href="#/sources" aria-current={section("/sources")}>
-            Sources
+            Library
           </a>
           <a href="#/collected" aria-current={section("/collected")}>
-            Collected{collected.items.length > 0 && <span className="count-pill">{collected.items.length}</span>}
+            Saved passages{collected.items.length > 0 && <span className="count-pill">{collected.items.length}</span>}
           </a>
           {config.data?.allowImports && (
             <a href="#/import" aria-current={section("/import")}>
@@ -121,8 +122,7 @@ export function App() {
       </header>
       <main>{page}</main>
       <footer className="notice">
-        This library reproduces historical and traditional texts. Passages report what their authors claimed. They are not
-        evidence that a treatment works and are not medical advice.
+        Historical and traditional texts, not medical advice. <a href="#/about">About this library</a>
       </footer>
     </>
   );
@@ -179,7 +179,7 @@ function CollectButton({ item }: { item: CollectedItem }) {
   const on = isCollected(items, item.passageId);
   return (
     <button type="button" className={`collect${on ? " on" : ""}`} aria-pressed={on} onClick={() => toggle(item)}>
-      {on ? "Collected ✓" : "Collect"}
+      {on ? "Saved ✓" : "Save"}
     </button>
   );
 }
@@ -212,7 +212,7 @@ function SearchPage({ params }: { params: URLSearchParams }) {
     <section>
       <form className="search" onSubmit={submit} role="search">
         <label htmlFor="q" className="visually-hidden">
-          Search the library
+          Search the materia medica
         </label>
         <input
           id="q"
@@ -225,7 +225,9 @@ function SearchPage({ params }: { params: URLSearchParams }) {
         <button type="submit">Search</button>
       </form>
 
+      {(all.length > 1 || editions.length > 0) && (
       <div className="filters">
+        {all.length > 1 && (
         <select aria-label="Source" value={filters.source} onChange={(e) => set({ source: e.target.value, offset: "" })}>
           <option value="">All sources</option>
           {all.map((s) => (
@@ -234,24 +236,29 @@ function SearchPage({ params }: { params: URLSearchParams }) {
             </option>
           ))}
         </select>
+        )}
+        {authors.length > 1 && (
         <select aria-label="Author" value={filters.author} onChange={(e) => set({ author: e.target.value, offset: "" })}>
           <option value="">All authors</option>
           {authors.map((a) => (
             <option key={a}>{a}</option>
           ))}
         </select>
-        <select aria-label="Edition" value={filters.edition} onChange={(e) => set({ edition: e.target.value, offset: "" })} disabled={!editions.length}>
-          <option value="">{editions.length ? "All editions" : "No editions recorded"}</option>
-          {editions.map((ed) => (
-            <option key={ed}>{ed}</option>
-          ))}
-        </select>
+        )}
+        {editions.length > 0 && (
+          <select aria-label="Edition" value={filters.edition} onChange={(e) => set({ edition: e.target.value, offset: "" })}>
+            <option value="">All editions</option>
+            {editions.map((ed) => (
+              <option key={ed}>{ed}</option>
+            ))}
+          </select>
+        )}
       </div>
+      )}
 
       {!q && (
-        <p className="muted">
-          Search for exact words in {all.length === 1 ? "1 source" : `${all.length} sources`}. Every word must appear in the
-          passage. A word ending in * matches its prefix, so <code>rheumat*</code> finds rheumatic and rheumatism.
+        <p className="muted small">
+          Searches {all.length === 1 ? "1 book" : `${all.length} books and notes`}. Tip: <code>rheumat*</code> finds rheumatic and rheumatism.
         </p>
       )}
       <Status loading={results.loading} error={results.error} />
@@ -461,13 +468,13 @@ function SymptomsPage() {
   };
   return (
     <section className="wide">
-      <h1>Symptom search</h1>
+      <h1>Repertory</h1>
       <div className="tabs" role="tablist">
         <button type="button" role="tab" aria-selected={tab === "repertory"} onClick={() => choose("repertory")}>
-          Repertory
+          Rubrics
         </button>
         <button type="button" role="tab" aria-selected={tab === "books"} onClick={() => choose("books")}>
-          Book passages
+          Symptoms in the books
         </button>
       </div>
       {tab === "repertory" ? (
@@ -524,21 +531,48 @@ function MemoryCase({ rep }: { rep: LoadedRepertory }) {
   );
 }
 
+/** The Repertory page: pick rubrics above, compare remedies below. */
 export function RepertoryCase({
-  rep: { data: rep, tokens, tree },
+  rep,
   rubrics,
   setRubrics,
   method,
   setMethod,
-  saved = false,
 }: {
   rep: LoadedRepertory;
   rubrics: Rubric[];
   setRubrics: (next: Rubric[]) => void;
   method: RankMethod;
   setMethod: (m: RankMethod) => void;
-  /** True on a client visit, where the case is saved to the client's record. */
-  saved?: boolean;
+}) {
+  const caseRubrics = liveRubrics(rep.data, rubrics);
+  return (
+    <>
+      <p className="muted small">
+        Find a rubric for each symptom and add it to the case. Rubrics from{" "}
+        <a href={rep.data.source.source_url} target="_blank" rel="noopener noreferrer" title={rep.data.source.reuse_terms}>
+          {rep.data.source.title}
+        </a>
+        . Nothing on this page is saved; for a client, use their visit.
+      </p>
+      <RubricPicker rep={rep} rubrics={caseRubrics} setRubrics={setRubrics} />
+      <CaseResults rep={rep} rubrics={caseRubrics} setRubrics={setRubrics} method={method} setMethod={setMethod} />
+    </>
+  );
+}
+
+/** The rubrics still in the current repertory file; a newer file can drop or move some. */
+export const liveRubrics = (data: RepertoryFile, rubrics: Rubric[]) => rubrics.filter((r) => data.rubrics[r.id]?.[0] === r.path);
+
+/** Browse the tree or find a rubric by its words, and add it to the case. */
+export function RubricPicker({
+  rep: { data: rep, tokens, tree },
+  rubrics,
+  setRubrics,
+}: {
+  rep: LoadedRepertory;
+  rubrics: Rubric[];
+  setRubrics: (next: Rubric[]) => void;
 }) {
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
@@ -556,32 +590,15 @@ export function RepertoryCase({
     setBrowsePath(path);
   };
   const found = useMemo(() => (query ? searchRubrics(rep, tokens, query, 40) : null), [rep, tokens, query]);
-  // The case is kept by rubric id; drop any that no longer exist in a newer repertory file.
-  const caseRubrics = rubrics.filter((r) => rep.rubrics[r.id]?.[0] === r.path);
-  const ids = caseRubrics.map((r) => r.id);
-  const ranked = useMemo(() => repertorize(rep, ids, method), [rep, ids.join(","), method]);
-  const shown = ranked.slice(0, 30);
-  const full = caseRubrics.length >= MAX_CASE_RUBRICS;
-
-  const add = (r: Rubric) => !ids.includes(r.id) && !full && setRubrics([...caseRubrics, r]);
-  const remove = (id: number) => setRubrics(caseRubrics.filter((r) => r.id !== id));
+  const ids = rubrics.map((r) => r.id);
+  const full = rubrics.length >= MAX_CASE_RUBRICS;
+  const add = (r: Rubric) => !ids.includes(r.id) && !full && setRubrics([...rubrics, r]);
 
   return (
     <>
-      <p className="muted">
-        Start from the body area and narrow down (Ear, then pain, then burning), or find a rubric by its words, and add
-        each symptom to the case. Remedies are ranked by how many of the chosen rubrics list
-        them, then by their grades (1 to 3). Rubrics come from{" "}
-        <a href={rep.source.source_url} target="_blank" rel="noopener noreferrer" title={rep.source.reuse_terms}>
-          {rep.source.title}
-        </a>{" "}
-        ({rep.rubrics.length.toLocaleString()} rubrics).{" "}
-        {saved ? "The rubrics you add are saved to this visit, encrypted." : "Everything here runs in your browser and nothing is saved."} This shows what the repertory lists. It is not
-        evidence that a remedy works and it is not a prescription.
-      </p>
       <div className="tabs sub" role="tablist" aria-label="How to choose rubrics">
         <button type="button" role="tab" aria-selected={mode === "browse"} onClick={() => setMode("browse")}>
-          Browse
+          Browse by body area
         </button>
         <button type="button" role="tab" aria-selected={mode === "find"} onClick={() => setMode("find")}>
           Find by words
@@ -591,126 +608,200 @@ export function RepertoryCase({
         <RubricBrowser data={rep} tree={tree} at={browseAt} goTo={goTo} ids={ids} full={full} add={add} />
       ) : (
         <>
-        <form
-          className="search"
-          role="search"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setQuery(draft.trim());
-          }}
-        >
-          <label htmlFor="rubric-q" className="visually-hidden">
-            Find a rubric
-          </label>
-          <input
-            id="rubric-q"
-            type="search"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Find a rubric, e.g. anxiety night, or restless* (a * matches word endings)"
-          />
-          <button type="submit">Find</button>
-        </form>
+          <form
+            className="search"
+            role="search"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setQuery(draft.trim());
+            }}
+          >
+            <label htmlFor="rubric-q" className="visually-hidden">
+              Find a rubric
+            </label>
+            <input
+              id="rubric-q"
+              type="search"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="e.g. anxiety night, or restless* (* matches word endings)"
+            />
+            <button type="submit">Find</button>
+          </form>
 
-        {query && (
-          <div className="rubric-results">
-            {found && found.length === 0 && <p className="muted">No rubric contains all of those words.</p>}
-            <ul className="rubric-list">
-              {found?.map((r) => {
-                const inCase = ids.includes(r.id);
-                return (
-                  <li key={r.id}>
-                    <div className="rubric-row">
-                      <button type="button" className="link" aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)}>
-                        {r.path}
-                      </button>
-                      <span className="muted count">{r.remedyCount}</span>
-                      <button type="button" className="secondary small-btn" onClick={() => (goTo(tree.byPath.get(r.path) ?? null), setMode("browse"))}>
-                        In tree
-                      </button>
-                      <button type="button" className={`collect${inCase ? " on" : ""}`} disabled={inCase || full} onClick={() => add(r)}>
-                        {inCase ? "Added ✓" : "Add"}
-                      </button>
-                    </div>
-                    {open === r.id && <RubricRemedies data={rep} id={r.id} />}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
+          {query && (
+            <div className="rubric-results">
+              {found && found.length === 0 && <p className="muted">No rubric contains all of those words.</p>}
+              <ul className="rubric-list">
+                {found?.map((r) => {
+                  const inCase = ids.includes(r.id);
+                  return (
+                    <li key={r.id}>
+                      <div className="rubric-row">
+                        <button type="button" className="link" aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)}>
+                          {r.path}
+                        </button>
+                        <span className="muted count">{r.remedyCount}</span>
+                        <button type="button" className="secondary small-btn" onClick={() => (goTo(tree.byPath.get(r.path) ?? null), setMode("browse"))}>
+                          In tree
+                        </button>
+                        <button type="button" className={`collect${inCase ? " on" : ""}`} disabled={inCase || full} onClick={() => add(r)}>
+                          {inCase ? "Added ✓" : "Add"}
+                        </button>
+                      </div>
+                      {open === r.id && <RubricRemedies data={rep} id={r.id} />}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
         </>
       )}
+      {full && <p className="muted small">A case can hold {MAX_CASE_RUBRICS} rubrics. Remove one to add another.</p>}
+    </>
+  );
+}
 
+/** The rubrics in a case as a short list, each with a remove button. */
+export function CaseList({ rubrics, setRubrics }: { rubrics: Rubric[]; setRubrics: (next: Rubric[]) => void }) {
+  if (rubrics.length === 0) return <p className="muted">No rubrics in the case yet.</p>;
+  return (
+    <ul className="case-list">
+      {rubrics.map((r) => (
+        <li key={r.id}>
+          <span>
+            {r.path} <small className="muted">{r.remedyCount}</small>
+          </span>
+          <button type="button" className="remove" aria-label={`Remove ${r.path}`} onClick={() => setRubrics(rubrics.filter((x) => x.id !== r.id))}>
+            ×
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Where to read about a remedy: the materia medica search for its name. */
+export const readAbout = (name: string) => `#/search?q=${encodeURIComponent(name)}`;
+
+/** The ranked remedies: the top few as cards with full names, then the full grid. */
+export function CaseResults({
+  rep: { data: rep },
+  rubrics,
+  setRubrics,
+  method,
+  setMethod,
+  chosen,
+  onChoose,
+}: {
+  rep: LoadedRepertory;
+  rubrics: Rubric[];
+  setRubrics: (next: Rubric[]) => void;
+  method: RankMethod;
+  setMethod: (m: RankMethod) => void;
+  /** On a visit: the remedy chosen, and how to choose one. */
+  chosen?: string;
+  onChoose?: (name: string) => void;
+}) {
+  const ids = rubrics.map((r) => r.id);
+  const ranked = useMemo(() => repertorize(rep, ids, method), [rep, ids.join(","), method]);
+  const shown = ranked.slice(0, 30);
+  const top = ranked.slice(0, 5);
+  const [grid, setGrid] = useState(false);
+  const remove = (id: number) => setRubrics(rubrics.filter((r) => r.id !== id));
+
+  return (
+    <>
       <h2 className="case-head">
-        Case <span className="muted">· {caseRubrics.length} rubric{caseRubrics.length === 1 ? "" : "s"}</span>
-        {caseRubrics.length > 0 && (
+        Case <span className="muted">· {rubrics.length} rubric{rubrics.length === 1 ? "" : "s"}</span>
+        {rubrics.length > 0 && (
           <button type="button" className="secondary" onClick={() => setRubrics([])}>
             Clear case
           </button>
         )}
       </h2>
-      {full && <p className="muted">A case can hold {MAX_CASE_RUBRICS} rubrics. Remove one to add another.</p>}
-      {caseRubrics.length === 0 ? (
-        <p className="muted">No rubrics yet. Find one above and press Add.</p>
+      {rubrics.length === 0 ? (
+        <p className="muted">No rubrics yet. Add some and the remedies that cover them appear here.</p>
       ) : (
         <>
-          <div className="controls">
-            <label htmlFor="method">Rank by</label>
-            <select id="method" value={method} onChange={(e) => setMethod(e.target.value as RankMethod)}>
-              <option value="symptoms">Rubrics covered, then grades</option>
-              <option value="grades">Total grade, then rubrics covered</option>
-            </select>
-            <span className="muted">
-              {ranked.length} remed{ranked.length === 1 ? "y" : "ies"}
+          <ol className="top-remedies">
+            {top.map((m, i) => (
+              <li key={m.index} className={i === 0 ? "first" : undefined}>
+                <b>{m.name}</b>
+                <span className="meter" aria-hidden="true">
+                  <i style={{ width: `${(m.covered / rubrics.length) * 100}%` }} />
+                </span>
+                <span className="muted small">
+                  {m.covered} of {rubrics.length} rubric{rubrics.length === 1 ? "" : "s"} · grade {m.total}
+                </span>
+                <span className="top-actions">
+                  <a href={readAbout(m.name)}>Read about it →</a>
+                  {onChoose && (
+                    <button type="button" className={chosen === m.name ? "small-btn" : "secondary small-btn"} onClick={() => onChoose(m.name)} disabled={chosen === m.name}>
+                      {chosen === m.name ? "Chosen ✓" : "Choose"}
+                    </button>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ol>
+          <details className="grid-details" open={grid} onToggle={(e) => setGrid(e.currentTarget.open)}>
+            <summary>
+              Full grid: {ranked.length} remed{ranked.length === 1 ? "y" : "ies"}
               {ranked.length > shown.length ? `, top ${shown.length} shown` : ""}
-            </span>
-          </div>
-          <div className="rep-wrap">
-            <table className="rep grid">
-              <thead>
-                <tr>
-                  <th className="rep-rubric">Rubric</th>
-                  {shown.map((m) => (
-                    <th key={m.index} className="rem" title={m.name}>
-                      <span>{m.abbrev}</span>
-                    </th>
-                  ))}
-                </tr>
-                <tr className="totals">
-                  <th className="rep-rubric muted">Rubrics covered / total grade</th>
-                  {shown.map((m) => (
-                    <th key={m.index}>
-                      <b>{m.covered}</b>
-                      {m.total}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {caseRubrics.map((r, row) => (
-                  <tr key={r.id}>
-                    <th className="rep-rubric" scope="row">
-                      <button type="button" className="remove" aria-label={`Remove ${r.path}`} onClick={() => remove(r.id)}>
-                        ×
-                      </button>
-                      {r.path}
-                      <small>{r.remedyCount}</small>
-                    </th>
+            </summary>
+            <div className="controls">
+              <label htmlFor="method">Rank by</label>
+              <select id="method" value={method} onChange={(e) => setMethod(e.target.value as RankMethod)}>
+                <option value="symptoms">Rubrics covered, then grades</option>
+                <option value="grades">Total grade, then rubrics covered</option>
+              </select>
+            </div>
+            <div className="rep-wrap">
+              <table className="rep grid">
+                <thead>
+                  <tr>
+                    <th className="rep-rubric">Rubric</th>
                     {shown.map((m) => (
-                      <td key={m.index} className="rep-cell">
-                        {m.grades[row] > 0 && <span className={`dot g${m.grades[row]}`} title={`${m.name}: ${GRADE_LABEL[m.grades[row]]}`} />}
-                      </td>
+                      <th key={m.index} className="rem" title={m.name}>
+                        <span>{m.abbrev}</span>
+                      </th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="muted small">
-            Larger dots are higher grades. Columns are remedies, ranked left to right. Hover a dot or remedy for its full
-            name. Use the Book passages tab or Search to read what the books say about a remedy.
-          </p>
+                  <tr className="totals">
+                    <th className="rep-rubric muted">Rubrics covered / total grade</th>
+                    {shown.map((m) => (
+                      <th key={m.index}>
+                        <b>{m.covered}</b>
+                        {m.total}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rubrics.map((r, row) => (
+                    <tr key={r.id}>
+                      <th className="rep-rubric" scope="row">
+                        <button type="button" className="remove" aria-label={`Remove ${r.path}`} onClick={() => remove(r.id)}>
+                          ×
+                        </button>
+                        {r.path}
+                        <small>{r.remedyCount}</small>
+                      </th>
+                      {shown.map((m) => (
+                        <td key={m.index} className="rep-cell">
+                          {m.grades[row] > 0 && <span className={`dot g${m.grades[row]}`} title={`${m.name}: ${GRADE_LABEL[m.grades[row]]}`} />}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="muted small">Larger dots are higher grades. Hover a remedy for its full name.</p>
+          </details>
+          <p className="muted small">This is what the repertory lists, not a prescription.</p>
         </>
       )}
     </>
@@ -835,10 +926,7 @@ function RubricBrowser({
               );
             })}
           </ul>
-          <p className="muted small">
-            A number with › opens more detailed options. The other number is how many remedies the rubric lists. Tap a rubric
-            without › to see its remedies.
-          </p>
+          <p className="muted small">› opens more detail. The other number is how many remedies the rubric lists.</p>
         </>
       )}
     </div>
@@ -873,11 +961,7 @@ function BookSymptoms() {
 
   return (
     <>
-      <p className="muted">
-        Type one symptom per line. Each line is searched like the Search page, and matching passages are grouped under the
-        remedy heading they appear in. Remedies are listed by how many of your symptoms their passages mention. This shows
-        what the books say. It is not evidence that a remedy works and it is not a prescription.
-      </p>
+      <p className="muted small">One symptom per line. Remedies are listed by how many of the symptoms their passages in the books mention.</p>
       <form className="symptoms" onSubmit={submit}>
         <label htmlFor="symptoms" className="visually-hidden">
           Symptoms, one per line
@@ -960,10 +1044,7 @@ function BookSymptoms() {
               </table>
             </div>
           )}
-          <p className="muted small">
-            Numbers are how many passages under that remedy heading contain the symptom's words. Click a number to read the
-            first one. Grouping relies on the book's headings, so a heading that is not a remedy name can appear here.
-          </p>
+          <p className="muted small">Numbers are how many passages mention the symptom. Click one to read it.</p>
         </>
       )}
     </>
@@ -984,13 +1065,10 @@ function CollectedPage() {
 
   return (
     <section>
-      <h1>Collected passages</h1>
-      <p className="muted">
-        Passages you pin with Collect while researching. They are saved only in this browser on this device and are never
-        sent to the server. Do not use this tray for anything about a patient.
-      </p>
+      <h1>Saved passages</h1>
+      <p className="muted small">Kept in this browser only. Not for anything about a client.</p>
       {items.length === 0 ? (
-        <p className="muted">Nothing collected yet. Use Collect on a search result or a passage to pin it here.</p>
+        <p className="muted">Nothing saved yet. Press Save on a passage to keep it here.</p>
       ) : (
         <>
           <div className="tray-actions">
@@ -1056,7 +1134,7 @@ function CollectedPage() {
 function SourcesPage() {
   const { data, loading, error } = useFetch<{ sources: Source[] }>("/api/sources");
   if (!data) return <Status loading={loading} error={error} />;
-  if (!data.sources.length) return <p className="muted">No sources imported yet. See README.md for how to import a book.</p>;
+  if (!data.sources.length) return <p className="muted">No books imported yet.</p>;
   const books = data.sources.filter((s) => s.kind !== "notes");
   const notes = data.sources.filter((s) => s.kind === "notes");
   const list = (items: Source[]) => (
@@ -1076,7 +1154,7 @@ function SourcesPage() {
   );
   return (
     <section>
-      <h1>Sources</h1>
+      <h1>Library</h1>
       {notes.length > 0 && <h2>Books</h2>}
       {list(books)}
       {notes.length > 0 && (
@@ -1123,7 +1201,7 @@ function SourcePage({ id }: { id: string }) {
   return (
     <section>
       <p>
-        <a href="#/sources">← All sources</a>
+        <a href="#/sources">← Library</a>
       </p>
       <h1>{s.title}</h1>
       <dl className="meta">

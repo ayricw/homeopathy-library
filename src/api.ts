@@ -93,11 +93,12 @@ export interface ClientSummary {
   name: string;
   visit_count: number;
   last_visit: string | null;
+  last_visit_id: string | null;
 }
 
 export interface ClientDetail {
   client: { id: string; name: string; created_at: string };
-  visits: { id: string; date: string; rubric_count: number; remedy: string; kind: VisitKind }[];
+  visits: { id: string; date: string; rubric_count: number; remedy: string; kind: VisitKind; complaint: string }[];
 }
 
 export interface Visit {

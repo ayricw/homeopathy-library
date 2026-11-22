@@ -70,6 +70,12 @@ interface VisitRow {
   updated_at: string;
 }
 
+/** The start of an answer, for the visit list: its first line, at most 90 characters. */
+const firstLine = (text: string) => {
+  const line = text.trim().split("\n")[0].trim();
+  return line.length > 90 ? `${line.slice(0, 87)}…` : line;
+};
+
 /** Handles /api/clients and /api/visits. Returns null for any other path. */
 export async function routeClients(request: Request, url: URL, env: ClientsEnv, who: Who): Promise<Response | null> {
   const path = url.pathname.replace(/\/+$/, "");
@@ -106,12 +112,13 @@ export async function routeClients(request: Request, url: URL, env: ClientsEnv, 
   if (path === "/api/clients" && method === "GET") {
     const { results } = await db
       .prepare(
-        `SELECT c.*, COUNT(v.id) AS visit_count, MAX(v.visit_date) AS last_visit
+        `SELECT c.*, COUNT(v.id) AS visit_count, MAX(v.visit_date) AS last_visit,
+           (SELECT l.id FROM visits l WHERE l.client_id = c.id ORDER BY l.visit_date DESC, l.created_at DESC LIMIT 1) AS last_visit_id
          FROM clients c LEFT JOIN visits v ON v.client_id = c.id GROUP BY c.id`,
       )
-      .all<ClientRow & { visit_count: number; last_visit: string | null }>();
+      .all<ClientRow & { visit_count: number; last_visit: string | null; last_visit_id: string | null }>();
     const clients = await Promise.all(
-      results.map(async (r) => ({ id: r.id, name: await open(key, nameContext(r.id), r.name_enc), visit_count: r.visit_count, last_visit: r.last_visit })),
+      results.map(async (r) => ({ id: r.id, name: await open(key, nameContext(r.id), r.name_enc), visit_count: r.visit_count, last_visit: r.last_visit, last_visit_id: r.last_visit_id })),
     );
     clients.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
     return json({ clients });
@@ -128,7 +135,14 @@ export async function routeClients(request: Request, url: URL, env: ClientsEnv, 
     const id = m[1];
     if (method === "GET") {
       const client = await getClient(id);
-      const visits = (await clientVisits(id)).map((v) => ({ id: v.id, date: v.date, rubric_count: v.rubrics.length, remedy: v.remedy, kind: v.kind ?? "acute" }));
+      const visits = (await clientVisits(id)).map((v) => ({
+        id: v.id,
+        date: v.date,
+        rubric_count: v.rubrics.length,
+        remedy: v.remedy,
+        kind: v.kind ?? "acute",
+        complaint: firstLine(v.answers?.["main-complaint"] || v.answers?.["how-doing"] || ""),
+      }));
       return json({ client, visits });
     }
     if (method === "PATCH") {
