@@ -1,4 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
+import { Atom, Bookmark, BookOpen, CalendarPlus, ChevronRight, GitCompare, Info, Library, ListTree, Search, Sparkles, UserPlus, Users } from "lucide-react";
+import { Avatar } from "./ui";
 import { go, useFetch, type AppConfig } from "./App";
 import type { ClientSummary, Source } from "./api";
 
@@ -24,82 +26,91 @@ export function HomePage({ config, collected }: { config?: AppConfig; collected:
     e.preventDefault();
     if (q.trim()) go("/search", { q: q.trim() });
   };
+  const tools: { href: string; icon: ReactNode; title: string; text: string; tone: string }[] = [
+    ...(config?.clients ? [{ href: "#/clients", icon: <CalendarPlus />, title: "Start a visit", text: "Intake, rubrics, remedy", tone: "t1" }] : []),
+    { href: "#/symptoms?tab=repertory", icon: <ListTree />, title: "Repertory", text: "Build a case from rubrics", tone: "t2" },
+    { href: "#/search", icon: <BookOpen />, title: "Materia medica", text: all ? `${books} books, ${notes} notes` : "Search the books", tone: "t3" },
+    { href: "#/symptoms?tab=remedies", icon: <Sparkles />, title: "Remedies", text: "Every rubric, every book", tone: "t4" },
+    { href: "#/compare", icon: <GitCompare />, title: "Compare", text: "Remedies side by side", tone: "t5" },
+    { href: "#/symptoms?tab=families", icon: <Atom />, title: "Families", text: "Periodic table, plants, animals", tone: "t6" },
+    { href: "#/sources", icon: <Library />, title: "Library", text: "Books and your notes", tone: "t3" },
+    { href: "#/collected", icon: <Bookmark />, title: "Saved", text: collected ? `${collected} passage${collected === 1 ? "" : "s"}, and your notes` : "Passages and your notes", tone: "t2" },
+  ];
 
   return (
     <section className="home">
       <div className="hero">
         <p className="eyebrow">{greeting()}</p>
+        <h1>What are you working on today?</h1>
         <form className="search hero-search" role="search" onSubmit={submit}>
           <label htmlFor="home-q" className="visually-hidden">
             Search the materia medica
           </label>
-          <input id="home-q" type="search" placeholder="Search the materia medica: a symptom, a remedy…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <span className="search-field">
+            <Search size={20} className="field-icon" aria-hidden="true" />
+            <input id="home-q" type="search" placeholder="Search the materia medica: a symptom, a remedy…" value={q} onChange={(e) => setQ(e.target.value)} />
+          </span>
           <button type="submit" disabled={!q.trim()}>
             Search
           </button>
         </form>
       </div>
 
-      <div className="home-grid">
-        {config?.clients && (
-          <div className="panel">
-            <div className="panel-head">
-              <h2>Recent clients</h2>
-              <a className="button-link" href="#/clients">
-                + New client
-              </a>
-            </div>
-            {clients.loading && <p className="muted">Loading…</p>}
-            {clients.error && <p className="error">{clients.error}</p>}
-            {clients.data && recent.length === 0 && <p className="muted">No clients yet. Add one to start an intake.</p>}
-            {recent.length > 0 && (
-              <ul className="home-list">
-                {recent.map((c) => (
-                  <li key={c.id}>
-                    <a href={`#/clients/${c.id}`}>{c.name}</a>
-                    {c.last_visit_id && c.last_visit ? (
-                      <a className="quiet" href={`#/visits/${c.last_visit_id}`}>
-                        {shortDate(c.last_visit)} · carry on →
-                      </a>
-                    ) : (
-                      <span className="muted">No visits yet</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {(clients.data?.clients.length ?? 0) > recent.length && (
-              <a href="#/clients" className="small">
-                All {clients.data!.clients.length} clients →
-              </a>
-            )}
-          </div>
-        )}
-        <div className="panel">
-          <h2>Jump to</h2>
-          <ul className="home-list">
-            <li>
-              <a href="#/symptoms">Repertory</a>
-              <span className="muted">Rubrics and remedies</span>
-            </li>
-            <li>
-              <a href="#/search">Materia medica</a>
-              <span className="muted">Search the books</span>
-            </li>
-            <li>
-              <a href="#/sources">Library</a>
-              <span className="muted">{all ? `${books} book${books === 1 ? "" : "s"}, ${notes} note${notes === 1 ? "" : "s"}` : "Books and notes"}</span>
-            </li>
-            <li>
-              <a href="#/collected">Saved passages</a>
-              <span className="muted">{collected || "None yet"}</span>
-            </li>
-          </ul>
-          <a href="#/about" className="small">
-            How this works →
+      <div className="tile-grid">
+        {tools.map((t) => (
+          <a key={t.title} className={`tile ${t.tone}`} href={t.href}>
+            <span className="tile-icon" aria-hidden="true">
+              {t.icon}
+            </span>
+            <span className="tile-text">
+              <b>{t.title}</b>
+              <span>{t.text}</span>
+            </span>
           </a>
-        </div>
+        ))}
       </div>
+
+      {config?.clients && (
+        <div className="panel">
+          <div className="panel-head">
+            <h2>
+              <Users size={20} aria-hidden="true" /> Recent clients
+            </h2>
+            <a className="button-link" href="#/clients">
+              <UserPlus size={16} aria-hidden="true" /> New client
+            </a>
+          </div>
+          {clients.loading && <p className="muted">Loading…</p>}
+          {clients.error && <p className="error">{clients.error}</p>}
+          {clients.data && recent.length === 0 && <p className="muted">No clients yet. Add one to start an intake.</p>}
+          {recent.length > 0 && (
+            <ul className="client-cards compact">
+              {recent.map((c) => (
+                <li key={c.id}>
+                  <a href={c.last_visit_id ? `#/visits/${c.last_visit_id}` : `#/clients/${c.id}`}>
+                    <Avatar name={c.name} />
+                    <span className="cc-text">
+                      <b>{c.name}</b>
+                      <span className="muted small">{c.last_visit ? `Last visit ${shortDate(c.last_visit)} · carry on` : "No visits yet"}</span>
+                    </span>
+                    <ChevronRight size={18} className="muted" aria-hidden="true" />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+          {(clients.data?.clients.length ?? 0) > recent.length && (
+            <a href="#/clients" className="small">
+              All {clients.data!.clients.length} clients →
+            </a>
+          )}
+        </div>
+      )}
+      <p className="home-foot">
+        <a href="#/about">
+          <Info size={15} aria-hidden="true" /> How this works
+        </a>
+      </p>
     </section>
   );
 }
@@ -119,7 +130,7 @@ export function AboutPage() {
             <strong>Rubrics.</strong> The visit suggests rubrics from what you ticked and wrote. Add the ones that fit, or browse the repertory for more.
           </li>
           <li>
-            <strong>Remedy.</strong> See which remedies cover the most rubrics, read about them in the books, and record the one you choose.
+            <strong>Remedy.</strong> See which remedies cover the most rubrics, compare them side by side, read about them in the books, and record the remedy, potency and how it was given. At the next visit, record how the client responded.
           </li>
         </ol>
       </div>
@@ -133,6 +144,8 @@ export function AboutPage() {
       <ul>
         <li>Clients and visits are stored encrypted, and only the accounts allowed to see client records can open them.</li>
         <li>Suggested rubrics are worked out in your browser. Nothing from a visit is sent anywhere else.</li>
+        <li>Everyday-word rubric search uses a built-in word list in your browser, not AI. Nothing you type is sent anywhere.</li>
+        <li>Your own repertory additions and margin notes in the books are kept in the library for you. They are about remedies and books, so don't put anything about a client in them.</li>
         <li>The Repertory page and Saved passages keep nothing on the server. Saved passages stay in this browser only, so don't use them for anything about a client.</li>
       </ul>
       <h2>Please note</h2>

@@ -85,6 +85,9 @@ async function route(request: Request, url: URL, env: Env, who: { local: boolean
   if (method === "POST" && path === "/api/symptoms") return symptomSearch(request, env);
   if (method === "GET" && (m = path.match(/^\/api\/passages\/(\d+)$/))) return getPassage(env, Number(m[1]), url.searchParams);
   if (path === "/api/book-flags") return bookFlags(request, env, who.email);
+  if (method === "GET" && path === "/api/remedy-passages") return remedyPassages(env, url.searchParams);
+  if (path === "/api/additions") return additions(request, env, who.email);
+  if (path === "/api/passage-notes" || /^\/api\/passage-notes\/\d+$/.test(path)) return passageNotes(request, env, path, who.email);
 
   if (path.startsWith("/api/imports")) {
     // Production turns off imports from the web page; the GitHub book-list import (a service token) still works.
@@ -113,6 +116,109 @@ async function bookFlags(request: Request, env: Env, email: string | null) {
     await env.DB.prepare("DELETE FROM book_flags WHERE entry_key = ?").bind(key).run();
   }
   return json({ ok: true });
+}
+
+// ---------- Robyn's own repertory additions ----------
+
+export const MAX_ADDITION_NOTE = 500;
+
+async function additions(request: Request, env: Env, email: string | null) {
+  if (request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT id, rubric_path, remedy, grade, note, created_at FROM my_additions ORDER BY id").all();
+    return json({ additions: results });
+  }
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  if (request.method === "DELETE") {
+    const id = Number(body?.id);
+    if (!Number.isInteger(id) || id < 1) throw new HttpError(400, "Expected { id }");
+    await env.DB.prepare("DELETE FROM my_additions WHERE id = ?").bind(id).run();
+    return json({ ok: true });
+  }
+  if (request.method !== "POST") throw new HttpError(405, "Method not allowed");
+  const rubric = typeof body?.rubric === "string" ? body.rubric.trim() : "";
+  const remedy = typeof body?.remedy === "string" ? body.remedy.trim() : "";
+  const grade = Number(body?.grade ?? 1);
+  const note = typeof body?.note === "string" ? body.note.trim() : "";
+  if (!rubric || rubric.length > 500 || !rubric.includes(",")) throw new HttpError(400, "Choose a rubric.");
+  if (!remedy || remedy.length > 40) throw new HttpError(400, "Choose a remedy.");
+  if (![1, 2, 3].includes(grade)) throw new HttpError(400, "The grade must be 1, 2 or 3.");
+  if (note.length > MAX_ADDITION_NOTE) throw new HttpError(400, `The note can be at most ${MAX_ADDITION_NOTE} characters.`);
+  await env.DB.prepare(
+    `INSERT INTO my_additions (rubric_path, remedy, grade, note, added_by) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (rubric_path, remedy) DO UPDATE SET grade = excluded.grade, note = excluded.note`,
+  )
+    .bind(rubric, remedy, grade, note || null, email)
+    .run();
+  const row = await env.DB.prepare("SELECT id, rubric_path, remedy, grade, note, created_at FROM my_additions WHERE rubric_path = ? AND remedy = ?").bind(rubric, remedy).first();
+  return json({ addition: row }, 201);
+}
+
+// ---------- Notes in the margin of a book ----------
+
+export const MAX_PASSAGE_NOTE = 5_000;
+
+async function passageNotes(request: Request, env: Env, path: string, email: string | null) {
+  const idMatch = path.match(/\/(\d+)$/);
+  if (request.method === "GET" && !idMatch) {
+    const { results } = await env.DB.prepare(
+      `SELECT n.id, n.passage_id, n.note, n.created_at, n.updated_at, p.section, p.chapter, p.page_start, p.line_start,
+         s.id AS source_id, s.title
+       FROM passage_notes n JOIN passages p ON p.id = n.passage_id JOIN sources s ON s.id = p.source_id
+       ORDER BY n.updated_at DESC LIMIT 500`,
+    ).all();
+    return json({ notes: results });
+  }
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  const note = typeof body?.note === "string" ? body.note.trim() : "";
+  if (request.method === "POST" && !idMatch) {
+    const passageId = Number(body?.passageId);
+    if (!Number.isInteger(passageId) || passageId < 1) throw new HttpError(400, "Expected { passageId, note }");
+    if (!note || note.length > MAX_PASSAGE_NOTE) throw new HttpError(400, `Write a note of at most ${MAX_PASSAGE_NOTE.toLocaleString()} characters.`);
+    const exists = await env.DB.prepare("SELECT id FROM passages WHERE id = ?").bind(passageId).first();
+    if (!exists) throw new HttpError(404, "Passage not found");
+    const row = await env.DB.prepare("INSERT INTO passage_notes (passage_id, note, created_by) VALUES (?, ?, ?) RETURNING id, note, created_at, updated_at")
+      .bind(passageId, note, email)
+      .first();
+    return json({ note: row }, 201);
+  }
+  if (!idMatch) throw new HttpError(405, "Method not allowed");
+  const id = Number(idMatch[1]);
+  if (request.method === "PUT") {
+    if (!note || note.length > MAX_PASSAGE_NOTE) throw new HttpError(400, `Write a note of at most ${MAX_PASSAGE_NOTE.toLocaleString()} characters.`);
+    await env.DB.prepare("UPDATE passage_notes SET note = ?, updated_at = datetime('now') WHERE id = ?").bind(note, id).run();
+    return json({ ok: true });
+  }
+  if (request.method === "DELETE") {
+    await env.DB.prepare("DELETE FROM passage_notes WHERE id = ?").bind(id).run();
+    return json({ ok: true });
+  }
+  throw new HttpError(405, "Method not allowed");
+}
+
+// ---------- What each book says about a remedy ----------
+
+/**
+ * Passages whose heading names the remedy (the remedy's own chapter in a materia medica), grouped by
+ * book: how many there are and the first one, for the remedy page and comparing remedies.
+ */
+async function remedyPassages(env: Env, params: URLSearchParams) {
+  const match = buildMatchQuery(params.get("q") ?? "");
+  if (!match) return json({ sources: [] });
+  const { results } = await env.DB.prepare(
+    `SELECT s.id AS source_id, s.title, s.author, s.kind, COUNT(*) AS passages, MIN(p.id) AS first_id
+     FROM passages_fts JOIN passages p ON p.id = passages_fts.rowid JOIN sources s ON s.id = p.source_id
+     WHERE passages_fts MATCH ? GROUP BY s.id ORDER BY s.kind, passages DESC LIMIT 40`,
+  )
+    .bind(`section : (${match})`)
+    .all<{ source_id: string; title: string; author: string; kind: string; passages: number; first_id: number }>();
+  if (!results.length) return json({ sources: [] });
+  const firsts = await env.DB.prepare(
+    `SELECT id, section, chapter, page_start, substr(text, 1, 700) AS text FROM passages WHERE id IN (${results.map(() => "?").join(", ")})`,
+  )
+    .bind(...results.map((r) => r.first_id))
+    .all<{ id: number; section: string | null; chapter: string | null; page_start: string | null; text: string }>();
+  const byId = new Map(firsts.results.map((f) => [f.id, f]));
+  return json({ sources: results.map((r) => ({ ...r, first: byId.get(r.first_id) ?? null })) });
 }
 
 // ---------- Sources ----------
@@ -253,13 +359,14 @@ async function getPassage(env: Env, id: number, params: URLSearchParams) {
     ordinal: number;
   }>();
   if (!passage) throw new HttpError(404, "Passage not found");
-  const [src, around, corrections] = await env.DB.batch([
+  const [src, around, corrections, notes] = await env.DB.batch([
     env.DB.prepare(`SELECT ${SOURCE_COLUMNS} FROM sources WHERE id = ?`).bind(passage.source_id),
     env.DB.prepare(
       `SELECT id, ordinal, chapter, section, page_start, page_end, line_start, line_end, text
        FROM passages WHERE source_id = ? AND ordinal BETWEEN ? AND ? AND id != ? ORDER BY ordinal`,
     ).bind(passage.source_id, passage.ordinal - context, passage.ordinal + context, passage.id),
     env.DB.prepare("SELECT corrected_text, note, corrected_by, created_at FROM passage_corrections WHERE passage_id = ? ORDER BY id").bind(id),
+    env.DB.prepare("SELECT id, note, created_at, updated_at FROM passage_notes WHERE passage_id = ? ORDER BY id").bind(id),
   ]);
   const neighbours = around.results as { ordinal: number }[];
   return json({
@@ -268,6 +375,7 @@ async function getPassage(env: Env, id: number, params: URLSearchParams) {
     before: neighbours.filter((p) => p.ordinal < passage.ordinal),
     after: neighbours.filter((p) => p.ordinal > passage.ordinal),
     corrections: corrections.results,
+    notes: notes.results,
   });
 }
 
