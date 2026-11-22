@@ -44,12 +44,14 @@ function Report({ data: { visit, client, previous }, rep }: { data: Loaded; rep:
     .filter((s) => s.rows.length);
   // Rubric paths to ids in the current repertory; paths it no longer has are listed but not ranked.
   const ids: number[] = [];
+  const keyIds: number[] = [];
   if (rep) for (const p of visit.rubrics) {
     const n = rep.tree.byPath.get(p);
     const rid = n === undefined ? null : rep.tree.nodes[n].id;
     if (rid !== null) ids.push(rid);
+    if (rid !== null && visit.keyRubrics?.includes(p)) keyIds.push(rid);
   }
-  const ranked = rep && ids.length ? repertorize(rep.rankData, ids, visit.method).slice(0, 10) : [];
+  const ranked = rep && ids.length ? repertorize(rep.rankData, ids, visit.method === "symptoms" ? "power" : visit.method, keyIds).slice(0, 10) : [];
 
   return (
     <article className="report">
@@ -122,7 +124,10 @@ function Report({ data: { visit, client, previous }, rep }: { data: Loaded; rep:
         ) : (
           <ol className="report-rubrics">
             {visit.rubrics.map((r) => (
-              <li key={r}>{r}</li>
+              <li key={r}>
+                {r}
+                {visit.keyRubrics?.includes(r) && " ★"}
+              </li>
             ))}
           </ol>
         )}
@@ -136,6 +141,7 @@ function Report({ data: { visit, client, previous }, rep }: { data: Loaded; rep:
               <tr>
                 <th>#</th>
                 <th>Remedy</th>
+                <th>Power</th>
                 <th>Rubrics covered</th>
                 <th>Total grade</th>
               </tr>
@@ -145,6 +151,7 @@ function Report({ data: { visit, client, previous }, rep }: { data: Loaded; rep:
                 <tr key={m.index}>
                   <td>{i + 1}</td>
                   <td>{m.name}</td>
+                  <td>{m.power}</td>
                   <td>
                     {m.covered} of {ids.length} ({pct(m.covered, ids.length)}%)
                   </td>

@@ -393,7 +393,9 @@ function VisitEditor({ rep, visit, client, previous }: { rep: LoadedRepertory; v
   });
   const [rubricsState, setRubrics] = useState<Rubric[]>(initial.found);
   const rubrics = liveRubrics(rep.data, rubricsState);
-  const [method, setMethod] = useState<RankMethod>(visit.method);
+  // "Rubrics covered" was the default before the Power score; visits that kept the default now rank by power.
+  const [method, setMethod] = useState<RankMethod>(visit.method === "symptoms" ? "power" : visit.method);
+  const [keys, setKeys] = useState<string[]>(visit.keyRubrics ?? []);
   const [date, setDate] = useState(visit.date);
   const [notes, setNotes] = useState(visit.notes);
   const [remedy, setRemedy] = useState(visit.remedy);
@@ -413,7 +415,7 @@ function VisitEditor({ rep, visit, client, previous }: { rep: LoadedRepertory; v
 
   const payload = {
     date,
-    data: { rubrics: [...rubricsState.map((r) => r.path), ...initial.missing], method, notes, remedy, potency, dosing, response, responseNotes, kind, answers },
+    data: { rubrics: [...rubricsState.map((r) => r.path), ...initial.missing], method, keyRubrics: keys, notes, remedy, potency, dosing, response, responseNotes, kind, answers },
   };
   const pending = useRef<string | null>(null);
   const first = useRef(true);
@@ -464,7 +466,11 @@ function VisitEditor({ rep, visit, client, previous }: { rep: LoadedRepertory; v
   const inCase = new Set(rubrics.map((r) => r.id));
   const waiting = suggestions.filter((s) => !inCase.has(s.id)).length;
   const answered = FORMS[kind].flatMap((s) => s.questions).filter((q) => answers[q.id]?.trim() || answers[`${q.id}-more`]?.trim()).length;
-  const ranked = useMemo(() => repertorize(rep.rankData, rubrics.map((r) => r.id), method), [rep.rankData, rubrics.map((r) => r.id).join(","), method]);
+  const keyIds = rubrics.filter((r) => keys.includes(r.path)).map((r) => r.id);
+  const ranked = useMemo(
+    () => repertorize(rep.rankData, rubrics.map((r) => r.id), method, keyIds),
+    [rep.rankData, rubrics.map((r) => r.id).join(","), method, keyIds.join(",")],
+  );
 
   const steps: { id: Step; title: string; note: string; icon: ReactNode }[] = [
     { id: "case", title: "1 · Case", note: `${answered} answer${answered === 1 ? "" : "s"}`, icon: <ClipboardList size={20} aria-hidden="true" /> },
@@ -599,8 +605,8 @@ function VisitEditor({ rep, visit, client, previous }: { rep: LoadedRepertory; v
                 {ranked.slice(0, 3).map((m) => (
                   <li key={m.index}>
                     <span>{m.name}</span>
-                    <span className="muted">
-                      {m.covered}/{rubrics.length}
+                    <span className="muted" title="Power score">
+                      {m.power}
                     </span>
                   </li>
                 ))}
@@ -637,14 +643,14 @@ function VisitEditor({ rep, visit, client, previous }: { rep: LoadedRepertory; v
             <h2>
               In the case <span className="muted">· {rubrics.length}</span>
             </h2>
-            <CaseList rubrics={rubrics} setRubrics={setRubrics} />
+            <CaseList rubrics={rubrics} setRubrics={setRubrics} keys={keys} setKeys={setKeys} />
           </aside>
         </div>
       )}
 
       {step === "remedy" && (
         <>
-          <CaseResults rep={rep} rubrics={rubrics} setRubrics={setRubrics} method={method} setMethod={setMethod} chosen={remedy} onChoose={setRemedy} />
+          <CaseResults rep={rep} rubrics={rubrics} setRubrics={setRubrics} method={method} setMethod={setMethod} keys={keys} setKeys={setKeys} chosen={remedy} onChoose={setRemedy} />
           <section className="rx-card">
             <h2>
               <Pill size={20} aria-hidden="true" /> Prescription

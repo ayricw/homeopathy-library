@@ -51,7 +51,8 @@ describe("client record validation", () => {
       ok: true,
       value: {
         rubrics: ["Ear, pain"],
-        method: "symptoms",
+        method: "power",
+        keyRubrics: [],
         notes: "n",
         remedy: "Puls.",
         potency: "",
@@ -78,6 +79,9 @@ describe("client record validation", () => {
     expect(cleanVisit({ answers: ["x"] }).ok).toBe(false);
     expect(cleanVisit({ rubrics: [1] }).ok).toBe(false);
     expect(cleanVisit({ method: "other" }).ok).toBe(false);
+    // Key rubrics must be in the case; others are dropped.
+    expect(cleanVisit({ rubrics: ["Mind, grief"], keyRubrics: ["Mind, grief", "Ear, pain"] })).toMatchObject({ ok: true, value: { keyRubrics: ["Mind, grief"] } });
+    expect(cleanVisit({ keyRubrics: "Mind, grief" }).ok).toBe(false);
     expect(cleanVisit({ rubrics: Array.from({ length: MAX_VISIT_RUBRICS + 1 }, (_, i) => `R${i}`) }).ok).toBe(false);
     expect(cleanVisit({ notes: "x".repeat(20_001) }).ok).toBe(false);
   });

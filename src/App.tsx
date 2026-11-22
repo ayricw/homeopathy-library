@@ -609,14 +609,17 @@ const pastFinds: string[] = [];
 
 const caseMemory: {
   rubrics: Rubric[];
-  method: "symptoms" | "grades";
+  method: RankMethod;
+  /** Paths of rubrics starred as key symptoms. */
+  keys: string[];
   tab: RepertoryTab;
   mode: "browse" | "find";
   /** Path of the open level in Browse, or null for the chapter list. */
   browseAt: string | null;
 } = {
   rubrics: [],
-  method: "symptoms",
+  method: "power",
+  keys: [],
   tab: "repertory",
   mode: "browse",
   browseAt: null,
@@ -940,8 +943,14 @@ function BooksSwitch({ books }: { books: BooksView | null }) {
 function MemoryCase({ rep }: { rep: LoadedRepertory }) {
   const [rubrics, setRubricsState] = useState<Rubric[]>(caseMemory.rubrics);
   const [method, setMethodState] = useState(caseMemory.method);
+  const [keys, setKeysState] = useState(caseMemory.keys);
   return (
     <RepertoryCase
+      keys={keys}
+      setKeys={(next) => {
+        caseMemory.keys = next;
+        setKeysState(next);
+      }}
       rep={rep}
       rubrics={rubrics}
       setRubrics={(next) => {
@@ -964,12 +973,16 @@ export function RepertoryCase({
   setRubrics,
   method,
   setMethod,
+  keys,
+  setKeys,
 }: {
   rep: LoadedRepertory;
   rubrics: Rubric[];
   setRubrics: (next: Rubric[]) => void;
   method: RankMethod;
   setMethod: (m: RankMethod) => void;
+  keys: string[];
+  setKeys: (next: string[]) => void;
 }) {
   const caseRubrics = liveRubrics(rep.data, rubrics);
   return (
@@ -982,7 +995,7 @@ export function RepertoryCase({
         . Nothing on this page is saved; for a client, use their visit.
       </p>
       <RubricPicker rep={rep} rubrics={caseRubrics} setRubrics={setRubrics} />
-      <CaseResults rep={rep} rubrics={caseRubrics} setRubrics={setRubrics} method={method} setMethod={setMethod} />
+      <CaseResults rep={rep} rubrics={caseRubrics} setRubrics={setRubrics} method={method} setMethod={setMethod} keys={keys} setKeys={setKeys} />
     </>
   );
 }
@@ -1146,14 +1159,42 @@ export function RubricPicker({
   );
 }
 
-/** The rubrics in a case as a short list, each with a remove button. */
-export function CaseList({ rubrics, setRubrics }: { rubrics: Rubric[]; setRubrics: (next: Rubric[]) => void }) {
+/** Star or unstar a rubric as a key symptom. */
+export function KeyStar({ path, keys, setKeys }: { path: string; keys: string[]; setKeys: (next: string[]) => void }) {
+  const on = keys.includes(path);
+  return (
+    <button
+      type="button"
+      className={`key-star${on ? " on" : ""}`}
+      aria-pressed={on}
+      aria-label={on ? `Unstar ${path}` : `Star ${path} as a key symptom`}
+      title={on ? "Key symptom: counts double. Tap to unstar." : "Star as a key symptom (counts double)"}
+      onClick={() => setKeys(on ? keys.filter((k) => k !== path) : [...keys, path])}
+    >
+      <Star size={15} aria-hidden="true" fill={on ? "currentColor" : "none"} />
+    </button>
+  );
+}
+
+/** The rubrics in a case as a short list, each with a star and a remove button. */
+export function CaseList({
+  rubrics,
+  setRubrics,
+  keys,
+  setKeys,
+}: {
+  rubrics: Rubric[];
+  setRubrics: (next: Rubric[]) => void;
+  keys: string[];
+  setKeys: (next: string[]) => void;
+}) {
   if (rubrics.length === 0) return <p className="muted">No rubrics in the case yet.</p>;
   return (
     <ul className="case-list">
       {rubrics.map((r) => (
         <li key={r.id}>
-          <span>
+          <KeyStar path={r.path} keys={keys} setKeys={setKeys} />
+          <span className="case-path">
             {r.path} <small className="muted">{r.remedyCount}</small>
           </span>
           <button type="button" className="remove" aria-label={`Remove ${r.path}`} onClick={() => setRubrics(rubrics.filter((x) => x.id !== r.id))}>
@@ -1194,18 +1235,24 @@ export function CaseResults({
   setMethod,
   chosen,
   onChoose,
+  keys,
+  setKeys,
 }: {
   rep: LoadedRepertory;
   rubrics: Rubric[];
   setRubrics: (next: Rubric[]) => void;
   method: RankMethod;
   setMethod: (m: RankMethod) => void;
+  /** Paths of rubrics starred as key symptoms (count double in the Power score). */
+  keys: string[];
+  setKeys: (next: string[]) => void;
   /** On a visit: the remedy chosen, and how to choose one. */
   chosen?: string;
   onChoose?: (name: string) => void;
 }) {
   const ids = rubrics.map((r) => r.id);
-  const ranked = useMemo(() => repertorize(rankData, ids, method), [rankData, ids.join(","), method]);
+  const keyIds = rubrics.filter((r) => keys.includes(r.path)).map((r) => r.id);
+  const ranked = useMemo(() => repertorize(rankData, ids, method, keyIds), [rankData, ids.join(","), method, keyIds.join(",")]);
   // Entries the books add (not already in the repertory) to each remedy, across the case's rubrics.
   const bookAdds = (remedy: number) =>
     !books?.on
@@ -1233,6 +1280,28 @@ export function CaseResults({
         <p className="muted">No rubrics yet. Add some and the remedies that cover them appear here.</p>
       ) : (
         <>
+          <div className="key-row">
+            <p className="muted small">
+              <Star size={14} aria-hidden="true" /> Star the symptoms you're surest of. They count double in the Power score.
+            </p>
+            <div className="chip-row">
+              {rubrics.map((r) => {
+                const on = keys.includes(r.path);
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    className={`chip key-chip${on ? " on" : ""}`}
+                    aria-pressed={on}
+                    title={r.path}
+                    onClick={() => setKeys(on ? keys.filter((k) => k !== r.path) : [...keys, r.path])}
+                  >
+                    <Star size={13} aria-hidden="true" fill={on ? "currentColor" : "none"} /> {r.path}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div className="results-bar">
             <BooksSwitch books={books} />
             {top.length > 1 && (
@@ -1250,14 +1319,14 @@ export function CaseResults({
                 <a className="top-name" href={remedyHref(m.abbrev)}>
                   {m.name}
                 </a>
-                <span className="match">
-                  <b>{pct(m.covered, rubrics.length)}%</b> of rubrics
+                <span className="match" title="Power score: grades, weighted for rare, mind and general, and starred rubrics">
+                  <b>{m.power}</b> power
                 </span>
                 <span className="meter" aria-hidden="true">
-                  <i style={{ width: `${(m.covered / rubrics.length) * 100}%` }} />
+                  <i style={{ width: `${m.power}%` }} />
                 </span>
                 <span className="muted small">
-                  {m.covered} of {rubrics.length} rubric{rubrics.length === 1 ? "" : "s"} · grade {m.total} of {rubrics.length * 3} ({pct(m.total, rubrics.length * 3)}%)
+                  {m.covered} of {rubrics.length} rubric{rubrics.length === 1 ? "" : "s"} ({pct(m.covered, rubrics.length)}%) · grade {m.total} of {rubrics.length * 3} ({pct(m.total, rubrics.length * 3)}%)
                 </span>
                 <span className="top-actions">
                   <a href={readAbout(m.name, rep)}>Read about it →</a>
@@ -1335,6 +1404,7 @@ export function CaseResults({
             <div className="controls">
               <label htmlFor="method">Rank by</label>
               <select id="method" value={method} onChange={(e) => setMethod(e.target.value as RankMethod)}>
+                <option value="power">Power score</option>
                 <option value="symptoms">Rubrics covered, then grades</option>
                 <option value="grades">Total grade, then rubrics covered</option>
               </select>
@@ -1367,6 +1437,7 @@ export function CaseResults({
                         <button type="button" className="remove" aria-label={`Remove ${r.path}`} onClick={() => remove(r.id)}>
                           ×
                         </button>
+                        <KeyStar path={r.path} keys={keys} setKeys={setKeys} />
                         {r.path}
                         <BookTag books={books} id={r.id} />
                         <small>{r.remedyCount}</small>

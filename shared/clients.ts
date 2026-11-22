@@ -25,7 +25,9 @@ export type VisitKind = (typeof VISIT_KINDS)[number];
 export interface VisitData {
   /** Rubric paths, e.g. "Ear, pain, burning". Paths, not ids, so a rebuilt repertory file still matches. */
   rubrics: string[];
-  method: "symptoms" | "grades";
+  method: "power" | "symptoms" | "grades";
+  /** Rubric paths starred as key symptoms: they count double in the Power score. */
+  keyRubrics: string[];
   notes: string;
   remedy: string;
   /** The prescription: potency (e.g. 30C, 200C, LM1) and how it is given (free text, Robyn's own words). */
@@ -104,8 +106,11 @@ export function cleanVisit(input: unknown): Result<VisitData> {
   }
   const unique = [...new Set(rubrics.map((r: string) => r.trim()))];
   if (unique.length > MAX_VISIT_RUBRICS) return { ok: false, error: `A visit can hold ${MAX_VISIT_RUBRICS} rubrics.` };
-  const method = v.method ?? "symptoms";
-  if (method !== "symptoms" && method !== "grades") return { ok: false, error: "Unknown ranking method." };
+  const method = v.method ?? "power";
+  if (method !== "power" && method !== "symptoms" && method !== "grades") return { ok: false, error: "Unknown ranking method." };
+  const keyRaw = v.keyRubrics ?? [];
+  if (!Array.isArray(keyRaw) || keyRaw.some((r) => typeof r !== "string")) return { ok: false, error: "Key rubrics must be a list of rubric paths." };
+  const keyRubrics = [...new Set(keyRaw.map((r: string) => r.trim()))].filter((r) => unique.includes(r));
   const notes = v.notes ?? "";
   if (typeof notes !== "string" || notes.length > MAX_NOTES) return { ok: false, error: `Notes can be at most ${MAX_NOTES.toLocaleString()} characters.` };
   const remedy = v.remedy ?? "";
@@ -138,6 +143,7 @@ export function cleanVisit(input: unknown): Result<VisitData> {
     value: {
       rubrics: unique,
       method,
+      keyRubrics,
       notes,
       remedy: remedy.trim(),
       potency: potency.trim(),
@@ -152,7 +158,8 @@ export function cleanVisit(input: unknown): Result<VisitData> {
 
 export const emptyVisit = (kind: VisitKind = "acute"): VisitData => ({
   rubrics: [],
-  method: "symptoms",
+  method: "power",
+  keyRubrics: [],
   notes: "",
   remedy: "",
   potency: "",

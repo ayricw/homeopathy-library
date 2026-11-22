@@ -136,8 +136,10 @@ export function AboutPage() {
       </div>
       <h2>Where things come from</h2>
       <p>
-        Rubrics come from the Repertorium Publicum, a free repertory. Remedies are ranked by how many of the chosen rubrics list
-        them, then by their grades (1 to 3). Books and notes are searched word for word: every word must appear in the passage,
+        Rubrics come from the Repertorium Publicum, a free repertory. Remedies are ranked by a Power score from 0 to 100:
+        each rubric is worth more when it lists few remedies, when it is a mind (1.5x) or general (1.3x) symptom, and when you
+        star it as a key symptom (2x); a remedy earns that worth times its grade out of 3. You can also rank by rubrics
+        covered or by total grade. Books and notes are searched word for word: every word must appear in the passage,
         and a word ending in * matches its endings, so <code>rheumat*</code> finds rheumatic and rheumatism.
       </p>
       <h2>What is kept where</h2>

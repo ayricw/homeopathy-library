@@ -84,3 +84,25 @@ describe("my additions", () => {
     expect(data.rubrics[2][1]).toEqual([e(2, 2)]);
   });
 });
+
+describe("power score", () => {
+  it("rewards rare, mind and key rubrics and orders by power", async () => {
+    const { repertorize, rubricWeight } = await import("../shared/repertory");
+    expect(rubricWeight("Skin, x", 1)).toBeCloseTo(2.5);
+    expect(rubricWeight("Skin, x", 500)).toBe(1);
+    expect(rubricWeight("Mind, x", 500)).toBe(1.5);
+    expect(rubricWeight("Generalities, x", 500, true)).toBeCloseTo(2.6);
+    const all = repertorize(data, [0, 1, 3]);
+    expect(all[0].power).toBeGreaterThan(all[1].power);
+    expect(all.every((r) => r.power >= 0 && r.power <= 100)).toBe(true);
+    // Every rubric at grade 3 scores 100.
+    expect(repertorize(data, [0])[0]).toMatchObject({ abbrev: "Kali-c.", power: 100 });
+    // Starring the rubric only Pulsatilla has lifts it above Kali-c., who only has the other.
+    const plain = repertorize(data, [0, 2]);
+    const keyed = repertorize(data, [0, 2], "power", [2]);
+    expect(plain[0].abbrev).toBe("Kali-c.");
+    expect(keyed[0].abbrev).toBe("Puls.");
+    const p = (list: typeof plain, a: string) => list.find((r) => r.abbrev === a)!.power;
+    expect(p(keyed, "Puls.") - p(keyed, "Kali-c.")).toBeGreaterThan(p(plain, "Puls.") - p(plain, "Kali-c."));
+  });
+});

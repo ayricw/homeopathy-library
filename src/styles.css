@@ -537,6 +537,18 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .first .rank { background: var(--brass); color: #fff; }
 .top-name { font: 650 1.05rem/1.25 var(--ui); color: var(--text); text-decoration: none; padding-right: 2rem; }
 .top-name:hover { color: var(--accent); text-decoration: underline; }
+.key-row { margin: 0.25rem 0 0.75rem; }
+.key-row p { display: flex; align-items: center; gap: 0.35rem; margin: 0; }
+.key-row p svg { color: var(--brass); }
+.key-chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.key-chip svg { color: var(--muted); }
+.key-chip.on, .key-chip.on:hover:not(:disabled) { background: var(--brass-soft); color: var(--text); border-color: var(--brass); }
+.key-chip.on svg { color: var(--brass); }
+.key-star { display: inline-flex; padding: 0.1rem; margin-right: 0.3rem; background: none; border: 0; box-shadow: none; color: var(--border-strong); vertical-align: -2px; }
+.key-star:hover:not(:disabled) { background: none; color: var(--brass); }
+.key-star.on { color: var(--brass); }
+.case-list li { justify-content: flex-start; }
+.case-list .case-path { flex: 1; }
 .match { font-size: 13px; color: var(--muted); }
 .match b { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; color: var(--accent-strong); margin-right: 0.2rem; font-variant-numeric: tabular-nums; }
 .first .match b { color: var(--brass); }
