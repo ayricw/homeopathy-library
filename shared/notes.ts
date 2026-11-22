@@ -64,3 +64,14 @@ export function pdfPagesToText(pages: string[]): string {
     .map(([n, t]) => `[Pg ${n}]\n${t}`)
     .join("\n\n");
 }
+
+/**
+ * Whether text recognition read real words rather than noise. Charts and pictures come back as
+ * scattered symbols and fragments; those pages are dropped instead of filling search with junk.
+ */
+export function looksLikeText(text: string): boolean {
+  const tokens = text.split(/\s+/).filter(Boolean);
+  if (tokens.length < 5) return false;
+  const words = tokens.filter((t) => /^[(“"']?[A-Za-z][a-z]{2,}[.,;:!?)”"']*$/.test(t) && /[aeiouy]/i.test(t));
+  return words.length / tokens.length >= 0.5;
+}

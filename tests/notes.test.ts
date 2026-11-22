@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { notesId, notesMetadata, notesSkipReason, notesTitle, pdfPagesToText } from "../shared/notes";
+import { looksLikeText, notesId, notesMetadata, notesSkipReason, notesTitle, pdfPagesToText } from "../shared/notes";
 
 describe("notes import", () => {
   it("builds a title and a valid library id from the file name", () => {
@@ -22,5 +22,10 @@ describe("notes import", () => {
 
   it("marks each PDF page so passages keep page numbers", () => {
     expect(pdfPagesToText(["Arnica\nBruised", "", "Bellis"])).toBe("[Pg 1]\nArnica\nBruised\n\n[Pg 3]\nBellis");
+  });
+
+  it("keeps recognized prose and drops noise from charts", () => {
+    expect(looksLikeText("Excretion is the vital process of removing wastes and excess water from the body.")).toBe(true);
+    expect(looksLikeText("LE {\nyr EA RH Cry LE Z3% [2\nsTILESeFNeR INT 2 [0\nRE Ee db RbRIS S23 (a")).toBe(false);
   });
 });
