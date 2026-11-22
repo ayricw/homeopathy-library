@@ -6,7 +6,7 @@ import type { RepertoryMeta } from "./oorep";
 
 export const MAX_CASE_RUBRICS = 40;
 
-export type RankMethod = "symptoms" | "grades";
+export type RankMethod = "power" | "symptoms" | "grades";
 
 /** The file written by scripts/build-repertory.ts and served as a static asset. */
 export interface RepertoryFile {
@@ -34,6 +34,26 @@ export interface RankedRemedy {
   total: number;
   /** Grade in each case rubric, in case order; 0 when the remedy is not listed. */
   grades: number[];
+  /** Power score, 0 to 100: see rubricWeight. */
+  power: number;
+}
+
+/** Chapters of general symptoms (the whole person), which count more than local ones. */
+const GENERAL_CHAPTERS = new Set(["generalities", "generals", "sleep", "dreams", "appetite", "perspiration", "fever", "chill", "food"]);
+
+/**
+ * How much one case rubric counts in the Power score:
+ * - rarity: a rubric listing few remedies says more (1 remedy counts 2.5x, 300 or more count 1x);
+ * - kind: mind symptoms 1.5x, general symptoms 1.3x, local symptoms 1x (Kent's order of importance);
+ * - key: a rubric starred as a key symptom counts double.
+ * A remedy earns the rubric's weight times its grade out of 3; the score is what it earned out of the most it could earn.
+ */
+export function rubricWeight(path: string, remedyCount: number, key = false): number {
+  const n = Math.max(1, remedyCount);
+  const rarity = 1 + 1.5 * (1 - Math.min(1, Math.log(n) / Math.log(300)));
+  const chapter = path.split(",")[0].trim().toLowerCase();
+  const kind = chapter === "mind" ? 1.5 : GENERAL_CHAPTERS.has(chapter) ? 1.3 : 1;
+  return rarity * kind * (key ? 2 : 1);
 }
 
 const words = (s: string) =>
@@ -99,7 +119,7 @@ export function rubricRemedies(data: RepertoryFile, id: number): { abbrev: strin
   });
 }
 
-export function repertorize(data: RepertoryFile, rubricIds: number[], method: RankMethod = "symptoms"): RankedRemedy[] {
+export function repertorize(data: RepertoryFile, rubricIds: number[], method: RankMethod = "power", keyIds: number[] = []): RankedRemedy[] {
   const byRemedy = new Map<number, RankedRemedy>();
   rubricIds.forEach((id, col) => {
     for (const e of data.rubrics[id]?.[1] ?? []) {
@@ -108,7 +128,7 @@ export function repertorize(data: RepertoryFile, rubricIds: number[], method: Ra
       let r = byRemedy.get(index);
       if (!r) {
         const [abbrev, name] = data.remedies[index];
-        r = { index, abbrev, name, covered: 0, total: 0, grades: rubricIds.map(() => 0) };
+        r = { index, abbrev, name, covered: 0, total: 0, grades: rubricIds.map(() => 0), power: 0 };
         byRemedy.set(index, r);
       }
       if (r.grades[col] === 0) r.covered++;
@@ -117,10 +137,19 @@ export function repertorize(data: RepertoryFile, rubricIds: number[], method: Ra
     }
   });
   const ranked = [...byRemedy.values()];
+  const keys = new Set(keyIds);
+  const weights = rubricIds.map((id) => rubricWeight(data.rubrics[id]?.[0] ?? "", data.rubrics[id]?.[1].length ?? 1, keys.has(id)));
+  const most = weights.reduce((a, b) => a + b, 0);
+  for (const r of ranked) {
+    const earned = r.grades.reduce((sum, g, col) => sum + (weights[col] * Math.min(g, 3)) / 3, 0);
+    r.power = most > 0 ? Math.round((earned / most) * 100) : 0;
+  }
   ranked.sort((a, b) =>
     method === "symptoms"
       ? b.covered - a.covered || b.total - a.total || a.abbrev.localeCompare(b.abbrev)
-      : b.total - a.total || b.covered - a.covered || a.abbrev.localeCompare(b.abbrev),
+      : method === "grades"
+        ? b.total - a.total || b.covered - a.covered || a.abbrev.localeCompare(b.abbrev)
+        : b.power - a.power || b.covered - a.covered || b.total - a.total || a.abbrev.localeCompare(b.abbrev),
   );
   return ranked;
 }

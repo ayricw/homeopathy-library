@@ -118,7 +118,8 @@ export interface Visit {
   client_id: string;
   date: string;
   rubrics: string[];
-  method: "symptoms" | "grades";
+  method: "power" | "symptoms" | "grades";
+  keyRubrics?: string[];
   notes: string;
   remedy: string;
   potency?: string;
