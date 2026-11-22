@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkEntries, chapters, indexRepertory, quoteFound } from "../shared/bookrubrics";
+import { checkEntries, chapters, flagKey, indexRepertory, listOnly, matchRemedy, mergeBooks, quoteFound, remedyWords, withoutBooks, type SavedBook } from "../shared/bookrubrics";
 import type { RepertoryFile } from "../shared/repertory";
 
 const rep: RepertoryFile = {
@@ -43,5 +43,56 @@ describe("book entries", () => {
       [null, 0, "101"],
     ]);
     expect(dropped).toHaveLength(3);
+  });
+});
+
+describe("saved book entries", () => {
+  const nash: SavedBook = {
+    source: "nash",
+    title: "Leaders",
+    label: "Nash",
+    model: "m",
+    run: "1",
+    entries: [
+      ["Ear, pain, burning", "Bry.", "burning pain in the ear", "12"], // added to an existing rubric
+      ["Ear, pain, burning", "Puls.", "burning earache of Pulsatilla", "13"], // the repertory already has it
+      ["Mind, weeping, twilight", "Puls.", "weeps at twilight", "14"], // a rubric the repertory lacks
+    ],
+  };
+
+  it("matches remedy spelling variants", () => {
+    const r: RepertoryFile = { ...rep, remedies: [["Hep.", "Hepar sulphuris calcareum"], ["Ph-ac.", "Acidum phosphoricum"]] };
+    const index = indexRepertory(r);
+    expect(matchRemedy(index, r, "Hepar sulphur")).toBe(0);
+    expect(matchRemedy(index, r, "Phosphoricum acidum")).toBe(1);
+    expect(matchRemedy(index, r, "Phosphoric acid")).toBe(1);
+    expect(matchRemedy(index, r, "Unknownia")).toBe(null);
+  });
+
+  it("spots quotes that only name remedies", () => {
+    const words = remedyWords(rep);
+    expect(listOnly("Pulsatilla, Bry. and others", words)).toBe(true);
+    expect(listOnly("burning pain in the left ear", words)).toBe(false);
+  });
+
+  it("adds book entries without moving the repertory's own rubrics", () => {
+    const { data, marks, newRubrics } = mergeBooks(rep, [nash], new Set());
+    expect(data.rubrics.slice(0, 3).map(([p]) => p)).toEqual(rep.rubrics.map(([p]) => p));
+    expect(data.rubrics[0][1]).toEqual([1, 1 * 4 + 1]); // Bry. added at grade 1 after Puls.
+    expect(rep.rubrics[0][1]).toEqual([1]); // the original is untouched
+    expect(data.rubrics[3]).toEqual(["Mind, weeping, twilight", [1]]);
+    expect(newRubrics.get(3)).toEqual(["Nash"]);
+    expect(marks.get(0)?.get(1)?.[0].added).toBe(true);
+    expect(marks.get(0)?.get(0)?.[0].added).toBe(false);
+    // Switched off: the repertory's own entries, and nothing in the books' rubrics.
+    const off = withoutBooks(rep, data);
+    expect(off.rubrics[0][1]).toEqual([1]);
+    expect(off.rubrics[3]).toEqual(["Mind, weeping, twilight", []]);
+  });
+
+  it("leaves out flagged entries but keeps rubric ids", () => {
+    const { data, marks } = mergeBooks(rep, [nash], new Set([flagKey("nash", "Puls.", "Mind, weeping, twilight")]));
+    expect(data.rubrics[3]).toEqual(["Mind, weeping, twilight", []]);
+    expect(marks.get(3)).toBeUndefined();
   });
 });

@@ -116,14 +116,17 @@ export function matchRemedy(index: RepertoryIndex, data: RepertoryFile, name: st
   const swapped = parts.length === 2 ? index.remedyByKey.get(`${parts[1]} ${parts[0]}`) : undefined;
   if (swapped !== undefined) return swapped;
   if (parts.length < 2) return null;
-  // Same first word, second word starting alike: accept only when exactly one remedy fits.
-  const stem = parts[1].slice(0, 4);
-  const hits: number[] = [];
-  data.remedies.forEach(([, full], i) => {
-    const w = normalize(full).split(" ");
-    if (w[0] === parts[0] && (w[1] ?? "").startsWith(stem)) hits.push(i);
-  });
-  return hits.length === 1 ? hits[0] : null;
+  // Same first word, second word starting alike (in either order): accept only when exactly one remedy fits.
+  for (const [a, b] of [parts, [parts[1], parts[0]]]) {
+    const stem = b.slice(0, 4);
+    const hits: number[] = [];
+    data.remedies.forEach(([, full], i) => {
+      const w = normalize(full).split(" ");
+      if ((w[0] === a || (a.length >= 5 && w[0].startsWith(a.slice(0, 5)))) && (w[1] ?? "").startsWith(stem)) hits.push(i);
+    });
+    if (hits.length === 1) return hits[0];
+  }
+  return null;
 }
 
 /** Words that belong to remedy names and abbreviations, to spot quotes that are only a list of remedies. */
