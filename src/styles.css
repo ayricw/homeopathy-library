@@ -537,6 +537,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .first .rank { background: var(--brass); color: #fff; }
 .top-name { font: 650 1.05rem/1.25 var(--ui); color: var(--text); text-decoration: none; padding-right: 2rem; }
 .top-name:hover { color: var(--accent); text-decoration: underline; }
+.match { font-size: 13px; color: var(--muted); }
+.match b { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; color: var(--accent-strong); margin-right: 0.2rem; font-variant-numeric: tabular-nums; }
+.first .match b { color: var(--brass); }
 .meter { display: block; height: 6px; border-radius: 99px; background: var(--sunken); overflow: hidden; }
 .meter i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 70%, var(--brass))); }
 .top-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.4rem; font-size: 13.5px; }
