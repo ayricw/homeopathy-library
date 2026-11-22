@@ -84,6 +84,7 @@ async function route(request: Request, url: URL, env: Env, who: { local: boolean
   if (method === "GET" && path === "/api/search") return search(env, url.searchParams);
   if (method === "POST" && path === "/api/symptoms") return symptomSearch(request, env);
   if (method === "GET" && (m = path.match(/^\/api\/passages\/(\d+)$/))) return getPassage(env, Number(m[1]), url.searchParams);
+  if (path === "/api/book-flags") return bookFlags(request, env, who.email);
 
   if (path.startsWith("/api/imports")) {
     // Production turns off imports from the web page; the GitHub book-list import (a service token) still works.
@@ -93,6 +94,25 @@ async function route(request: Request, url: URL, env: Env, who: { local: boolean
     if (method === "POST" && (m = path.match(/^\/api\/imports\/([\w-]+)\/passages$/))) return addPassages(request, env, m[1]);
   }
   throw new HttpError(404, "Not found");
+}
+
+// ---------- Book entries marked wrong ----------
+
+async function bookFlags(request: Request, env: Env, email: string | null) {
+  if (request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT entry_key FROM book_flags").all<{ entry_key: string }>();
+    return json({ flags: results.map((r) => r.entry_key) });
+  }
+  if (request.method !== "POST" && request.method !== "DELETE") throw new HttpError(405, "Method not allowed");
+  const body = (await request.json().catch(() => null)) as { key?: unknown } | null;
+  const key = typeof body?.key === "string" ? body.key : "";
+  if (!key || key.length > 600 || key.split("|").length !== 3) throw new HttpError(400, "Expected { key: \"source|remedy|rubric\" }");
+  if (request.method === "POST") {
+    await env.DB.prepare("INSERT OR IGNORE INTO book_flags (entry_key, flagged_by) VALUES (?, ?)").bind(key, email).run();
+  } else {
+    await env.DB.prepare("DELETE FROM book_flags WHERE entry_key = ?").bind(key).run();
+  }
+  return json({ ok: true });
 }
 
 // ---------- Sources ----------

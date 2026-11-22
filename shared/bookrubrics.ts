@@ -192,7 +192,8 @@ export const flagKey = (source: string, abbrev: string, rubric: string) => `${so
 /**
  * The repertory with the books' entries added: a remedy a book names in an existing rubric is added at
  * grade 1 (when not already listed); rubrics the repertory lacks are appended after its own, so the ids of
- * its own rubrics never change. Flagged entries are left out.
+ * its own rubrics never change. Flagged entries are left out. With the same books, the ids are the same
+ * whatever is flagged.
  */
 export function mergeBooks(base: RepertoryFile, books: SavedBook[], flagged: Set<string>): BookMerge {
   const rubrics = base.rubrics.map(([p, e]) => [p, [...e]] as [string, number[]]);
@@ -206,7 +207,8 @@ export function mergeBooks(base: RepertoryFile, books: SavedBook[], flagged: Set
     for (const [rubric, abbrev, quote, page] of book.entries) {
       const key = flagKey(book.source, abbrev, rubric);
       const r = remedyByAbbrev.get(abbrev);
-      if (r === undefined || flagged.has(key)) continue;
+      if (r === undefined) continue;
+      // Rubrics are created even when every entry in them is flagged, so rubric ids do not shift with flags.
       let id = byKey.get(normalize(rubric));
       if (id === undefined) {
         id = rubrics.push([rubric, []]) - 1;
@@ -216,6 +218,7 @@ export function mergeBooks(base: RepertoryFile, books: SavedBook[], flagged: Set
         const labels = newRubrics.get(id) ?? [];
         if (!labels.includes(book.label)) newRubrics.set(id, [...labels, book.label]);
       }
+      if (flagged.has(key)) continue;
       const entries = rubrics[id][1];
       const listed = entries.some((e) => e >> 2 === r);
       if (!listed) entries.push(r * 4 + 1);
@@ -229,4 +232,9 @@ export function mergeBooks(base: RepertoryFile, books: SavedBook[], flagged: Set
     }
   }
   return { data: { ...base, rubrics }, marks, newRubrics };
+}
+
+/** The merged repertory without the books' entries: what ranking uses when the books are switched off. */
+export function withoutBooks(base: RepertoryFile, merged: RepertoryFile): RepertoryFile {
+  return { ...merged, rubrics: merged.rubrics.map(([p, e], i) => [p, i < base.rubrics.length ? base.rubrics[i][1] : []]) };
 }

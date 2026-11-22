@@ -42,12 +42,14 @@ jobs:
           npm run build:repertory -- library/originals/oorep.sql.gz library/repertories/publicum.json
       - name: Download and save each listed run
         run: |
-          node -e 'for (const r of require("./library/book-rubrics.json").runs) console.log([r.source, r.run, r.model, r.label].join("\t"))' |
-          while IFS=$'\t' read -r source run model label; do
-            [[ "$source" =~ ^[a-z0-9-]+$ && "$run" =~ ^[0-9]+$ && "$model" =~ ^[a-z0-9.-]+$ && "$label" =~ ^[A-Za-z\ .-]+$ ]] || { echo "::error::Bad entry: $source $run"; exit 1; }
-            rm -rf "trial/$run"
-            gh run download "$run" -R "$GITHUB_REPOSITORY" -n "book-rubrics-$source" -D "trial/$run"
-            npx tsx scripts/save-book-rubrics.ts "trial/$run/$source.json" --model "$model" --label "$label" --run "$run"
+          node -e 'for (const r of require("./library/book-rubrics.json").runs) console.log([r.run, r.model, r.label ?? ""].join("\t"))' |
+          while IFS=$'\t' read -r run model label; do
+            [[ "$run" =~ ^[0-9]+$ && "$model" =~ ^[a-z0-9.-]+$ && "$label" =~ ^[A-Za-z\ .-]*$ ]] || { echo "::error::Bad entry for run $run"; exit 1; }
+            mkdir -p "trial/$run"
+            gh run download "$run" -R "$GITHUB_REPOSITORY" -D "trial/$run"
+            find "trial/$run" -name '*.json' -print0 | sort -z | while IFS= read -r -d '' f; do
+              npx tsx scripts/save-book-rubrics.ts "$f" --model "$model" --run "$run" ${label:+--label "$label"}
+            done
           done
       - name: Commit the file
         run: |

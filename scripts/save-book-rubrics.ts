@@ -2,7 +2,7 @@
 // reads to add the books' entries to remedy ranking (with an on/off switch). Run by the "Save book
 // rubrics" workflow, which downloads the trial's artifact first.
 //
-//   npx tsx scripts/save-book-rubrics.ts <trial.json> --model <model> --label <short name> --run <run id>
+//   npx tsx scripts/save-book-rubrics.ts <trial.json> --model <model> [--label <short name>] --run <run id>
 //
 // Needs public/data/repertory.json (npm run build:repertory) to match remedy names.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -19,7 +19,7 @@ const label = flag("label");
 const run = flag("run");
 const out = flag("out") || "public/book-rubrics.json";
 const [trialPath] = args;
-if (!trialPath || !label) {
+if (!trialPath) {
   console.error("Usage: tsx scripts/save-book-rubrics.ts <trial.json> --model <model> --label <short name> --run <run id>");
   process.exit(2);
 }
@@ -27,6 +27,7 @@ if (!trialPath || !label) {
 const trial = JSON.parse(readFileSync(trialPath, "utf8")) as {
   source: string;
   title: string;
+  label?: string;
   results: { model: string; entries: BookEntry[] }[];
 };
 const result = trial.results.find((r) => r.model === model);
@@ -36,7 +37,7 @@ const { saved, skipped } = saveEntries(repertory, result.entries);
 
 const file: BookRubricsFile = existsSync(out) ? JSON.parse(readFileSync(out, "utf8")) : { format: 1, books: [] };
 file.books = file.books.filter((b) => b.source !== trial.source);
-file.books.push({ source: trial.source, title: trial.title, label, model, run, entries: saved });
+file.books.push({ source: trial.source, title: trial.title, label: trial.label ?? label ?? trial.source, model, run, entries: saved });
 file.books.sort((a, b) => a.label.localeCompare(b.label));
 writeFileSync(out, JSON.stringify(file).replace(/\],\[/g, "],\n["));
 console.log(
