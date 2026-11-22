@@ -112,7 +112,7 @@ export function mergedRepertory(base: RepertoryFile): { data: RepertoryFile; ran
     }
     data = cache.merge.data;
     off = cache.off;
-    books = { ...cache.merge, labels: store.books.map((b) => b.label), on: store.on, original: base.rubrics.length };
+    books = { ...cache.merge, labels: [...new Set(store.books.map((b) => b.label))], on: store.on, original: base.rubrics.length };
   }
   if (!mineCache || mineCache.data !== data || mineCache.off !== off || mineCache.version !== store.additionsVersion) {
     mineCache = { data, off, version: store.additionsVersion, mergedOn: mergeAdditions(data, store.additions), mergedOff: mergeAdditions(off, store.additions) };

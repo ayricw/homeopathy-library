@@ -1,5 +1,14 @@
 {
   "runs": [
-    { "source": "nash-1901-leaders-2nd-edition", "label": "Nash", "model": "claude-opus-5-5", "run": "44975748087" }
+    {
+      "source": "nash-1901-leaders-2nd-edition",
+      "label": "Nash",
+      "model": "claude-opus-5-5",
+      "run": "44975748087"
+    },
+    {
+      "run": "44979319558",
+      "model": "claude-opus-5-5"
+    }
   ]
 }
