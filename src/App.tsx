@@ -800,7 +800,21 @@ export function CaseList({ rubrics, setRubrics }: { rubrics: Rubric[]; setRubric
 }
 
 /** Where to read about a remedy: the materia medica search for its name. */
-export const readAbout = (name: string) => `#/search?q=${encodeURIComponent(name)}`;
+export const readAbout = (name: string, data?: RepertoryFile) => `#/search?q=${encodeURIComponent(remedySearch(name, data))}`;
+
+/**
+ * Search words that find a remedy however the books spell it: "Kalium carbonicum" is "Kali carb." in Nash
+ * and Clarke, "Acidum phosphoricum" is "Phosphoric acid". Word starts (prefix search) cover the endings.
+ * Only when other remedies share the first word ("Kali", "Natrum", "Calcarea") is the second word needed.
+ */
+export function remedySearch(name: string, data?: RepertoryFile): string {
+  const words = name.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").split(/[^a-z]+/).filter(Boolean);
+  if (words.length === 0) return name;
+  const first = words[0];
+  const shared = (data?.remedies ?? []).filter(([, n]) => n.toLowerCase().split(/\s+/)[0] === first).length > 1;
+  if (shared && words[1]) return `${first.slice(0, 4)}* ${words[1].slice(0, 4)}*`;
+  return `${first.slice(0, 6)}*`;
+}
 
 /** The ranked remedies: the top few as cards with full names, then the full grid. */
 export function CaseResults({
@@ -862,7 +876,7 @@ export function CaseResults({
                   {m.covered} of {rubrics.length} rubric{rubrics.length === 1 ? "" : "s"} · grade {m.total}
                 </span>
                 <span className="top-actions">
-                  <a href={readAbout(m.name)}>Read about it →</a>
+                  <a href={readAbout(m.name, rep)}>Read about it →</a>
                   {onChoose && (
                     <button type="button" className={chosen === m.name ? "small-btn" : "secondary small-btn"} onClick={() => onChoose(m.name)} disabled={chosen === m.name}>
                       {chosen === m.name ? "Chosen ✓" : "Choose"}
