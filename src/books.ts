@@ -87,7 +87,7 @@ export function mergedRepertory(base: RepertoryFile): { data: RepertoryFile; ran
   return {
     data: merge.data,
     rankData: store.on ? merge.data : off,
-    books: { ...merge, labels: store.books.map((b) => b.label), on: store.on, original: base.rubrics.length },
+    books: { ...merge, labels: [...new Set(store.books.map((b) => b.label))], on: store.on, original: base.rubrics.length },
   };
 }
 

@@ -193,7 +193,7 @@ interface Book {
   jobs: Job[];
 }
 
-const surname = (author: string) => author.split(/[,;&]| and /)[0].trim().split(/\s+/).pop() ?? author;
+const surname = (author: string) => author.replace(/\([^)]*\)/g, "").split(/[,;&]| and /)[0].trim().split(/\s+/).pop() ?? author;
 const escapeXml = (s: string) => s.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[c]!);
 
 function toJobs(id: string, kind: Book["kind"], title: string, passages: Passage[]): Job[] {
