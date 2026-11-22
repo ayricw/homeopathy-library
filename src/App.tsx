@@ -11,6 +11,8 @@ import {
   Search,
   Sparkles,
   Star,
+  Award,
+  Funnel,
   Trash2,
   Upload,
   Users,
@@ -23,6 +25,7 @@ import { ClientPage, ClientsPage, VisitPage } from "./ClientsPages";
 import { VisitReport } from "./ReportPage";
 import { ComparePage, FamiliesTab, RemediesTab, RemedyPage, remedyHref } from "./RemediesPages";
 import { familyView } from "../shared/remedies";
+import { mustHave, SMALL_RUBRIC, standoutOf, strongestByRubric } from "../shared/standout";
 import { explain, plainIndex, searchPlain, type PlainHit } from "../shared/plain";
 import { KingdomIcon, EmptyState } from "./ui";
 import { excerpt, formatReferences, groupBySource, isCollected, useCollected, type CollectedItem } from "./collect";
@@ -1252,7 +1255,14 @@ export function CaseResults({
 }) {
   const ids = rubrics.map((r) => r.id);
   const keyIds = rubrics.filter((r) => keys.includes(r.path)).map((r) => r.id);
-  const ranked = useMemo(() => repertorize(rankData, ids, method, keyIds), [rankData, ids.join(","), method, keyIds.join(",")]);
+  const all = useMemo(() => repertorize(rankData, ids, method, keyIds), [rankData, ids.join(","), method, keyIds.join(",")]);
+  // "Must have" rubrics keep only the remedies listed in them. A way of looking, so it is not saved.
+  const [must, setMust] = useState<string[]>([]);
+  const mustCols = rubrics.flatMap((r, col) => (must.includes(r.path) ? [col] : []));
+  const ranked = useMemo(() => mustHave(all, mustCols), [all, mustCols.join(",")]);
+  const strongest = useMemo(() => strongestByRubric(rankData, ids, ranked), [rankData, ids.join(","), ranked]);
+  const remedyName = (index: number) => rankData.remedies[index]?.[1] ?? "";
+  const remedyAbbrev = (index: number) => rankData.remedies[index]?.[0] ?? "";
   // Entries the books add (not already in the repertory) to each remedy, across the case's rubrics.
   const bookAdds = (remedy: number) =>
     !books?.on
@@ -1282,25 +1292,47 @@ export function CaseResults({
         <>
           <div className="key-row">
             <p className="muted small">
-              <Star size={14} aria-hidden="true" /> Star the symptoms you're surest of. They count double in the Power score.
+              <Star size={14} aria-hidden="true" /> Star the symptoms you're surest of: they count double in the Power score.{" "}
+              <Funnel size={14} aria-hidden="true" /> Must have: show only remedies listed in that rubric.
             </p>
             <div className="chip-row">
               {rubrics.map((r) => {
                 const on = keys.includes(r.path);
+                const req = must.includes(r.path);
                 return (
-                  <button
-                    key={r.id}
-                    type="button"
-                    className={`chip key-chip${on ? " on" : ""}`}
-                    aria-pressed={on}
-                    title={r.path}
-                    onClick={() => setKeys(on ? keys.filter((k) => k !== r.path) : [...keys, r.path])}
-                  >
-                    <Star size={13} aria-hidden="true" fill={on ? "currentColor" : "none"} /> {r.path}
-                  </button>
+                  <span key={r.id} className={`chip key-chip${on ? " on" : ""}${req ? " must" : ""}`} title={r.path}>
+                    <button
+                      type="button"
+                      className="chip-btn star-btn"
+                      aria-pressed={on}
+                      aria-label={on ? `Unstar ${r.path}` : `Star ${r.path} as a key symptom`}
+                      onClick={() => setKeys(on ? keys.filter((k) => k !== r.path) : [...keys, r.path])}
+                    >
+                      <Star size={13} aria-hidden="true" fill={on ? "currentColor" : "none"} />
+                    </button>
+                    <span className="chip-text">{r.path}</span>
+                    <button
+                      type="button"
+                      className="chip-btn must-btn"
+                      aria-pressed={req}
+                      aria-label={req ? `Stop requiring ${r.path}` : `Must have ${r.path}`}
+                      title={req ? "Must have: on. Tap to show all remedies again." : "Must have: show only remedies in this rubric"}
+                      onClick={() => setMust(req ? must.filter((k) => k !== r.path) : [...must, r.path])}
+                    >
+                      <Funnel size={13} aria-hidden="true" fill={req ? "currentColor" : "none"} />
+                    </button>
+                  </span>
                 );
               })}
             </div>
+            {must.length > 0 && (
+              <p className="must-note small">
+                <Funnel size={14} aria-hidden="true" /> Showing {ranked.length} of {all.length} remedies: only those in {must.length === 1 ? "the must-have rubric" : `all ${must.length} must-have rubrics`}.{" "}
+                <button type="button" className="link" onClick={() => setMust([])}>
+                  Show all
+                </button>
+              </p>
+            )}
           </div>
           <div className="results-bar">
             <BooksSwitch books={books} />
@@ -1342,6 +1374,16 @@ export function CaseResults({
                     </button>
                   )}
                 </span>
+                {(() => {
+                  const s = standoutOf(rankData, ids, m);
+                  return (
+                    s && (
+                      <span className="standout" title={`Grade 3 in a rubric that lists only ${s.remedyCount} remedies`}>
+                        <Award size={13} aria-hidden="true" /> Standout: {pathOf(s.id)}
+                      </span>
+                    )
+                  );
+                })()}
                 {adds.length > 0 && (
                   <BookQuotes
                     data={rep}
@@ -1354,6 +1396,34 @@ export function CaseResults({
               );
             })}
           </ol>
+          {ranked.length === 0 && <p className="muted">No remedy is listed in every must-have rubric. Turn one off to see more.</p>}
+          <details className="grid-details strongest" open>
+            <summary>Strongest for each symptom</summary>
+            <p className="muted small">
+              The remedies at the top grade in each rubric, whatever their overall score. #1 is the overall rank. Small rubrics (up to {SMALL_RUBRIC} remedies) say the most.
+            </p>
+            <ul className="strongest-list">
+              {strongest.map((s) => (
+                <li key={s.id}>
+                  <div className="sl-head">
+                    <b>{pathOf(s.id)}</b>
+                    <span className="muted small">
+                      {s.remedyCount} remed{s.remedyCount === 1 ? "y" : "ies"}
+                      {s.remedyCount <= SMALL_RUBRIC ? " · small rubric" : ""} · top grade {s.grade}
+                    </span>
+                  </div>
+                  <p className="member-chips">
+                    {s.remedies.slice(0, 8).map((x) => (
+                      <a key={x.index} className={`chip${x.rank !== null && x.rank <= 5 ? " in-top" : ""}`} href={remedyHref(remedyAbbrev(x.index))}>
+                        {remedyName(x.index)} <small>{x.rank === null ? "not ranked" : `#${x.rank}`}</small>
+                      </a>
+                    ))}
+                    {s.remedies.length > 8 && <span className="muted small">and {s.remedies.length - 8} more</span>}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </details>
           {families.families.length > 0 && (
             <details className="grid-details">
               <summary>By family: which kingdoms and families cover the case</summary>
