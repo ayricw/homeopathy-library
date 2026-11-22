@@ -1,5 +1,6 @@
 import { buildMatchQuery } from "../shared/query";
-import { MAX_SYMPTOMS, parseSymptoms, rankRemedies, type HeadingHits } from "../shared/symptoms";
+import { expandedMatch } from "../shared/oldwords";
+import { isRemedyHeading, MAX_SYMPTOMS, parseSymptoms, rankRemedies, remedyLabel, remedyNameCheck, type HeadingHits } from "../shared/symptoms";
 import { checkAccess, type AccessConfig } from "./access";
 import { clientsAllowed, routeClients, type ClientsEnv } from "./clients";
 import { HttpError, json } from "./http";
@@ -81,7 +82,7 @@ async function route(request: Request, url: URL, env: Env, who: { local: boolean
   if (method === "GET" && path === "/api/sources") return listSources(env);
   if (method === "GET" && (m = path.match(/^\/api\/sources\/([\w-]+)$/))) return getSource(env, m[1]);
   if (method === "GET" && (m = path.match(/^\/api\/sources\/([\w-]+)\/original$/))) return getOriginal(env, m[1]);
-  if (method === "GET" && path === "/api/search") return search(env, url.searchParams);
+  if (method === "GET" && path === "/api/search") return search(env, url.searchParams, url.origin);
   if (method === "POST" && path === "/api/symptoms") return symptomSearch(request, env);
   if (method === "GET" && (m = path.match(/^\/api\/passages\/(\d+)$/))) return getPassage(env, Number(m[1]), url.searchParams);
   if (path === "/api/book-flags") return bookFlags(request, env, who.email);
@@ -278,9 +279,32 @@ async function getOriginal(env: Env, id: string) {
 
 // ---------- Search ----------
 
-async function search(env: Env, params: URLSearchParams) {
+// The repertory's remedy names (written next to the repertory file at build time), loaded once per Worker.
+// Without the file (a local copy with no repertory) every heading counts, as before.
+let remedyNames: Promise<((heading: string) => string | null) | null> | null = null;
+function namesRemedy(env: Env, origin: string) {
+  remedyNames ??= env.ASSETS.fetch(new Request(new URL("/data/remedy-names.json", origin)))
+    .then((r) => (r.ok ? (r.json() as Promise<[string, string][]>) : null))
+    .then((names) => (names?.length ? remedyNameCheck(names) : null))
+    .catch(() => null)
+    .then((check) => {
+      // Try again on the next search if the file could not be read.
+      if (!check) remedyNames = null;
+      return check;
+    });
+  return remedyNames;
+}
+
+/** The remedy a passage sits under: any remedy heading in a book; in notes, the known remedy its heading names. */
+function remedyOf(heading: string | null, kind: string, check: ((h: string) => string | null) | null): string | null {
+  if (!isRemedyHeading(heading)) return null;
+  if (kind !== "notes") return remedyLabel(heading);
+  return check?.(heading) ?? null;
+}
+
+async function search(env: Env, params: URLSearchParams, origin: string) {
   const q = params.get("q") ?? "";
-  const match = buildMatchQuery(q);
+  const { match, also } = expandedMatch(q);
   if (!match) return json({ query: q, results: [], total: 0 });
   const limit = Math.min(Math.max(Number(params.get("limit")) || 20, 1), 50);
   const offset = Math.max(Number(params.get("offset")) || 0, 0);
@@ -298,6 +322,9 @@ async function search(env: Env, params: URLSearchParams) {
       binds.push(v);
     }
   }
+  const kind = params.get("kind");
+  if (kind === "books") where.push("s.kind != 'notes'");
+  if (kind === "notes") where.push("s.kind = 'notes'");
   const from = `FROM passages_fts JOIN passages p ON p.id = passages_fts.rowid JOIN sources s ON s.id = p.source_id
     WHERE ${where.join(" AND ")}`;
 
@@ -306,17 +333,23 @@ async function search(env: Env, params: URLSearchParams) {
     env.DB.prepare(
       `SELECT p.id, p.source_id, p.ordinal, p.chapter, p.section, p.page_start, p.page_end, p.line_start, p.line_end,
          snippet(passages_fts, 0, char(2), char(3), '…', 32) AS snippet,
-         s.title, s.author, s.edition, s.publication_year
+         s.title, s.author, s.edition, s.publication_year, s.kind
        ${from} ORDER BY bm25(passages_fts) LIMIT ? OFFSET ?`,
     ).bind(...binds, limit, offset),
   ]);
+  const check = await namesRemedy(env, origin);
+  const results = (rows.results as { chapter: string | null; section: string | null; kind: string }[]).map((r) => ({
+    ...r,
+    remedy: remedyOf(r.section ?? r.chapter, r.kind, check),
+  }));
   return json({
     query: q,
     match,
+    also,
     total: (count.results[0] as { n: number }).n,
     limit,
     offset,
-    results: rows.results,
+    results,
   });
 }
 
@@ -341,12 +374,20 @@ async function symptomSearch(request: Request, env: Env) {
        GROUP BY p.source_id, heading`,
     ).bind(i, s.match, ...sources),
   );
-  const results = await env.DB.batch<HeadingHits>(statements);
+  const [results, kinds, check] = await Promise.all([
+    env.DB.batch<HeadingHits>(statements),
+    env.DB.prepare("SELECT id, kind FROM sources").all<{ id: string; kind: string }>(),
+    namesRemedy(env, new URL(request.url).origin),
+  ]);
+  const kindOf = new Map(kinds.results.map((s) => [s.id, s.kind]));
+  // In Robyn's notes a heading is often a topic ("FEVER DDX"), so it counts only when it names a known remedy.
   const ranked = rankRemedies(
     symptoms.length,
     results.flatMap((r) => r.results),
+    undefined,
+    (row) => remedyOf(row.heading, kindOf.get(row.source_id) ?? "book", check),
   );
-  return json({ symptoms: symptoms.map((s) => s.label), skipped, ...ranked });
+  return json({ symptoms: symptoms.map((s) => s.label), also: symptoms.map((s) => s.also), skipped, ...ranked });
 }
 
 // ---------- Passage with context ----------

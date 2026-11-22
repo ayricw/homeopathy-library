@@ -4,7 +4,7 @@
 // the symptoms their passages mention. This measures what the books say, not clinical evidence,
 // and it is not a prescription.
 
-import { buildMatchQuery } from "./query";
+import { expandedMatch } from "./oldwords";
 
 export const MAX_SYMPTOMS = 12;
 export const MAX_REMEDIES = 60;
@@ -44,14 +44,14 @@ export function isRemedyHeading(heading: string | null): heading is string {
 }
 
 /** Cleans the typed symptoms: one per line, blank and duplicate lines dropped, unsearchable ones reported. */
-export function parseSymptoms(input: string[]): { symptoms: { label: string; match: string }[]; skipped: string[] } {
+export function parseSymptoms(input: string[]): { symptoms: { label: string; match: string; also: string[] }[]; skipped: string[] } {
   const seen = new Set<string>();
-  const symptoms: { label: string; match: string }[] = [];
+  const symptoms: { label: string; match: string; also: string[] }[] = [];
   const skipped: string[] = [];
   for (const raw of input) {
     const label = raw.trim().replace(/\s+/g, " ");
     if (!label) continue;
-    const match = buildMatchQuery(label);
+    const { match, also } = expandedMatch(label);
     if (!match) {
       skipped.push(label);
       continue;
@@ -59,7 +59,7 @@ export function parseSymptoms(input: string[]): { symptoms: { label: string; mat
     const key = match.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    symptoms.push({ label, match });
+    symptoms.push({ label, match, also });
   }
   return { symptoms: symptoms.slice(0, MAX_SYMPTOMS), skipped };
 }
@@ -88,15 +88,23 @@ export interface RemedyRow {
 }
 
 /** Merges hits from every book under the remedy name and ranks by symptoms covered, then by passages. */
-export function rankRemedies(symptomCount: number, rows: HeadingHits[], limit = MAX_REMEDIES): { remedies: RemedyRow[]; total: number } {
+export function rankRemedies(
+  symptomCount: number,
+  rows: HeadingHits[],
+  limit = MAX_REMEDIES,
+  /** The remedy a row belongs to, or null to leave it out (e.g. a topic heading in Robyn's notes). */
+  nameOf: (row: HeadingHits) => string | null = (r) => remedyLabel(r.heading),
+): { remedies: RemedyRow[]; total: number } {
   const byKey = new Map<string, RemedyRow>();
   for (const r of rows) {
     if (!isRemedyHeading(r.heading)) continue;
-    const key = remedyKey(r.heading);
+    const name = nameOf(r);
+    if (!name) continue;
+    const key = remedyKey(name);
     let row = byKey.get(key);
     if (!row) {
       row = {
-        remedy: remedyLabel(r.heading),
+        remedy: name,
         sources: [],
         covered: 0,
         totalHits: 0,
@@ -114,4 +122,29 @@ export function rankRemedies(symptomCount: number, rows: HeadingHits[], limit = 
   for (const row of all) row.covered = row.cells.filter((c) => c.hits > 0).length;
   all.sort((a, b) => b.covered - a.covered || b.totalHits - a.totalHits || a.remedy.localeCompare(b.remedy));
   return { remedies: all.slice(0, limit), total: all.length };
+}
+
+/**
+ * A check that a heading names a remedy the repertory knows, by the start of its first word
+ * ("ACONITE CASE" matches Aconitum napellus; "FEVER DDX" and "PREGNANCY" match nothing).
+ * Used for Robyn's notes, whose headings are often topics rather than remedies; the books are
+ * arranged by remedy, so their headings are trusted as they are.
+ */
+export function remedyNameCheck(names: [string, string][]): (heading: string) => string | null {
+  const ALIASES: Record<string, string> = { natru: "natri", kali: "kaliu", merc: "mercu", calc: "calca", phos: "phosp", sulph: "sulph" };
+  const keyOf = (word: string) => (word.length >= 5 ? word.slice(0, 5) : word);
+  // First-word key to the first remedy name with it ("aconi" -> "Aconitum Napellus").
+  const known = new Map<string, string>();
+  for (const [abbrev, name] of names) {
+    const first = name.toLowerCase().split(/[^a-z]+/).find(Boolean);
+    if (first && !known.has(keyOf(first))) known.set(keyOf(first), name);
+    const ab = abbrev.toLowerCase().split(/[^a-z]+/).find(Boolean);
+    if (ab && ab.length >= 4 && !known.has(keyOf(ab))) known.set(keyOf(ab), name);
+  }
+  return (heading) => {
+    const first = remedyKey(heading).toLowerCase().split(/[^a-z]+/).find(Boolean) ?? "";
+    if (first.length < 3) return null;
+    const key = keyOf(first);
+    return known.get(ALIASES[key] ?? key) ?? known.get(ALIASES[first] ?? key) ?? null;
+  };
 }

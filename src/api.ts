@@ -39,10 +39,14 @@ export interface SearchHit extends PassageRef {
   author: string;
   edition: string | null;
   publication_year: number | null;
+  kind?: "book" | "notes";
+  /** The remedy the passage sits under, when its heading names one. */
+  remedy?: string | null;
 }
 
 export interface SearchResponse {
   query: string;
+  also?: string[];
   total: number;
   limit: number;
   offset: number;
@@ -70,6 +74,8 @@ export interface SourceDetail {
 
 export interface SymptomResponse {
   symptoms: string[];
+  /** Older words also searched for each symptom ("panic attack": anxiety, anguish…). */
+  also?: string[][];
   skipped: string[];
   total: number;
   remedies: { remedy: string; sources: string[]; covered: number; totalHits: number; cells: { hits: number; passageId: number | null }[] }[];

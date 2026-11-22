@@ -25,6 +25,7 @@ import { ClientPage, ClientsPage, VisitPage } from "./ClientsPages";
 import { VisitReport } from "./ReportPage";
 import { ComparePage, FamiliesTab, RemediesTab, RemedyPage, remedyHref } from "./RemediesPages";
 import { familyView } from "../shared/remedies";
+import { remedyKey } from "../shared/symptoms";
 import { mustHave, SMALL_RUBRIC, standoutOf, strongestByRubric } from "../shared/standout";
 import { explain, plainIndex, searchPlain, type PlainHit } from "../shared/plain";
 import { KingdomIcon, EmptyState } from "./ui";
@@ -252,7 +253,12 @@ function forgetSearches() {
 
 function SearchPage({ params }: { params: URLSearchParams }) {
   const q = params.get("q") ?? "";
-  const filters = { source: params.get("source") ?? "", author: params.get("author") ?? "", edition: params.get("edition") ?? "" };
+  const filters = {
+    source: params.get("source") ?? "",
+    author: params.get("author") ?? "",
+    edition: params.get("edition") ?? "",
+    kind: params.get("kind") ?? "",
+  };
   const offset = Number(params.get("offset")) || 0;
   const [draft, setDraft] = useState(q);
   useEffect(() => setDraft(q), [q]);
@@ -321,6 +327,7 @@ function SearchPage({ params }: { params: URLSearchParams }) {
         </div>
       )}
 
+      <KindSwitch value={filters.kind} onChange={(kind) => set({ kind, source: "", offset: "" })} />
       {(all.length > 1 || editions.length > 0) && (
       <div className="filters">
         {all.length > 1 && (
@@ -365,13 +372,21 @@ function SearchPage({ params }: { params: URLSearchParams }) {
               ? "No passages contain all of those words. Try fewer or different words."
               : `${results.data.total} passage${results.data.total === 1 ? "" : "s"} found`}
           </p>
+          {results.data.also && results.data.also.length > 0 && (
+            <p className="also-note small">
+              <Sparkles size={14} aria-hidden="true" /> The old books use other words, so this also searched: {results.data.also.join(", ")}.
+            </p>
+          )}
           <ol className="results">
             {results.data.results.map((r) => (
               <li key={r.id} className="result">
                 <CollectButton item={itemFrom(r, r, r.source_id, r.snippet)} />
                 <a href={`#/passage/${r.id}?q=${encodeURIComponent(q)}`}>
                   <div className="ref">
-                    <strong>{r.section ?? r.chapter ?? "Untitled section"}</strong>
+                    <strong>
+                      {r.remedy && <span className="remedy-pill">{titleCase(r.remedy)}</span>}
+                      {r.remedy && remedyKey(r.remedy) === remedyKey(r.section ?? r.chapter ?? "") ? null : (r.section ?? r.chapter ?? "Untitled section")}
+                    </strong>
                     <span>{[pages(r), `lines ${r.line_start}–${r.line_end}`].filter(Boolean).join(" · ")}</span>
                   </div>
                   <p className="snippet">
@@ -388,6 +403,27 @@ function SearchPage({ params }: { params: URLSearchParams }) {
         </>
       )}
     </section>
+  );
+}
+
+/** "ACONITUM NAPELLUS" as "Aconitum Napellus"; names already in mixed case are kept. */
+const titleCase = (s: string) => (s === s.toUpperCase() ? s.toLowerCase().replace(/(^|[\s-])\p{L}/gu, (m) => m.toUpperCase()) : s);
+
+/** Search the books, Robyn's notes, or both. */
+function KindSwitch({ value, onChange }: { value: string; onChange: (kind: string) => void }) {
+  const options: [string, string][] = [
+    ["", "Both"],
+    ["books", "Books"],
+    ["notes", "Notes"],
+  ];
+  return (
+    <div className="segmented kind-switch" role="radiogroup" aria-label="Search in">
+      {options.map(([v, label]) => (
+        <button key={v} type="button" role="radio" aria-checked={value === v} onClick={() => onChange(v)}>
+          {label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -1678,6 +1714,14 @@ function BookSymptoms() {
   const [chosen, setChosen] = useState<Set<string> | null>(null); // null = every book
   const [state, setState] = useState<{ data?: SymptomResponse; error?: string; loading: boolean }>({ loading: false });
   const picked = chosen ?? new Set(all.map((s) => s.id));
+  const kindNow = chosen === null ? "" : (() => {
+    const books = all.filter((s) => s.kind !== "notes").map((s) => s.id);
+    const notes = all.filter((s) => s.kind === "notes").map((s) => s.id);
+    const same = (ids: string[]) => ids.length === picked.size && ids.every((id) => picked.has(id));
+    return same(books) ? "books" : same(notes) ? "notes" : "custom";
+  })();
+  const pickKind = (kind: string) =>
+    setChosen(kind === "" ? null : new Set(all.filter((s) => (kind === "notes") === (s.kind === "notes")).map((s) => s.id)));
   const titles = new Map(all.map((s) => [s.id, s.title]));
 
   const toggleSource = (id: string) => {
@@ -1711,8 +1755,9 @@ function BookSymptoms() {
           onChange={(e) => setText(e.target.value)}
           placeholder={"burning pain\nworse at night\nthirst for small sips\nrestless"}
         />
+        <KindSwitch value={kindNow} onChange={pickKind} />
         <fieldset className="books">
-          <legend>Books to search</legend>
+          <legend>Books and notes to search</legend>
           {all.map((s) => (
             <label key={s.id}>
               <input type="checkbox" checked={picked.has(s.id)} onChange={() => toggleSource(s.id)} /> {s.title}
@@ -1733,6 +1778,16 @@ function BookSymptoms() {
       {data && (
         <>
           {data.skipped.length > 0 && <p className="muted">Skipped (no searchable words): {data.skipped.join(", ")}</p>}
+          {data.also?.some((a) => a.length) && (
+            <p className="also-note small">
+              <Sparkles size={14} aria-hidden="true" /> The old books use other words, so this also searched:{" "}
+              {data.symptoms
+                .map((s, i) => (data.also?.[i]?.length ? `${s}: ${data.also[i].join(", ")}` : null))
+                .filter(Boolean)
+                .join("; ")}
+              .
+            </p>
+          )}
           <p className="muted">
             {data.total === 0
               ? "No remedy passages mention any of those symptoms. Try other words, or a prefix such as rheumat*."
