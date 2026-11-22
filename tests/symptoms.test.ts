@@ -7,8 +7,8 @@ describe("symptom search", () => {
   it("cleans symptom lines", () => {
     const { symptoms, skipped } = parseSymptoms(["  burning   pain ", "", "Burning pain", "!!!", '"worse at night"']);
     expect(symptoms).toEqual([
-      { label: "burning pain", match: '"burning" "pain"' },
-      { label: '"worse at night"', match: '"worse at night"' },
+      { label: "burning pain", match: '"burning" "pain"', also: [] },
+      { label: '"worse at night"', match: '"worse at night"', also: [] },
     ]);
     expect(skipped).toEqual(["!!!"]);
     expect(parseSymptoms(Array.from({ length: 20 }, (_, i) => `s${i}`)).symptoms).toHaveLength(MAX_SYMPTOMS);
@@ -51,5 +51,24 @@ describe("remedy headings from running heads", () => {
     expect(remedyLabel("PHYTOLACCA Sr")).toBe("PHYTOLACCA");
     expect(remedyLabel("ACONITUM CAMMARUM ii")).toBe("ACONITUM CAMMARUM");
     expect(remedyLabel("Abies canadensis.")).toBe("Abies canadensis");
+  });
+});
+
+describe("notes headings and older words", () => {
+  it("counts a notes heading only when it names a known remedy", async () => {
+    const { remedyNameCheck } = await import("../shared/symptoms");
+    const check = remedyNameCheck([["Acon.", "Aconitum Napellus"], ["Nat-m.", "Natrium Muriaticum"], ["Nux-v.", "Nux Vomica"]]);
+    expect(check("ACONITE CASE – PANDAS CASE")).toBe("Aconitum Napellus");
+    expect(check("NATRUM MUR.")).toBe("Natrium Muriaticum");
+    expect(check("Nux vomica")).toBe("Nux Vomica");
+    expect(check("FEVER DDX")).toBeNull();
+    expect(check("PREGNANCY")).toBeNull();
+  });
+  it("also searches the books' older words for modern ones", async () => {
+    const { expandedMatch } = await import("../shared/oldwords");
+    const e = expandedMatch("panic attacks");
+    expect(e.also).toContain("anguish");
+    expect(e.match).toBe('("panic" "attacks") OR ("anxi"*) OR ("anguish"*) OR ("terror"*) OR ("fear" "death")');
+    expect(expandedMatch("burning pain")).toEqual({ match: '"burning" "pain"', also: [] });
   });
 });

@@ -33,6 +33,8 @@ const file = repertoryFile(meta, parsed, { name: basename(dumpPath), sha256 });
 mkdirSync(dirname(out), { recursive: true });
 const json = JSON.stringify(file);
 writeFileSync(out, json);
+// The remedy names alone, for the Worker to tell remedy headings from topic headings in notes.
+writeFileSync(`${dirname(out)}/remedy-names.json`, JSON.stringify(file.remedies));
 console.log(
   `${meta.title}: ${file.rubrics.length} rubrics with remedies, ${parsed.entries.length} entries, ${file.remedies.length} remedies.\n` +
     `Wrote ${out} (${(json.length / 1e6).toFixed(1)} MB). Deploy to publish it: npm run deploy:dev`,
