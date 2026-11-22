@@ -1,0 +1,59 @@
+# Saves a finished "Book rubrics trial" run into public/book-rubrics.json and commits it to the branch
+# the workflow was started on (never main). The app then offers the book's entries in remedy ranking.
+# Costs nothing: it only downloads the trial's artifact. Started by hand, or by a push that changes
+# library/book-rubrics.json (the list of runs to save).
+name: Save book rubrics
+
+on:
+  workflow_dispatch:
+  push:
+    branches-ignore: [main]
+    paths: [library/book-rubrics.json]
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: save-book-rubrics-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  save:
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      OOREP_URL: https://raw.githubusercontent.com/nondeterministic/oorep/6479a276ed82fd7e0459da527f5ab656f1bbe298/oorep.sql.gz
+      OOREP_SHA256: 0a20753505bd99e1942382f6fca7c6d9a29cd8fad0715ebbade64c1bbf11948e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build the repertory file
+        run: |
+          mkdir -p library/originals
+          curl -fsSL -o library/originals/oorep.sql.gz "$OOREP_URL"
+          echo "$OOREP_SHA256  library/originals/oorep.sql.gz" | sha256sum -c -
+          npm run build:repertory -- library/originals/oorep.sql.gz library/repertories/publicum.json
+      - name: Download and save each listed run
+        run: |
+          node -e 'for (const r of require("./library/book-rubrics.json").runs) console.log([r.source, r.run, r.model, r.label].join("\t"))' |
+          while IFS=$'\t' read -r source run model label; do
+            [[ "$source" =~ ^[a-z0-9-]+$ && "$run" =~ ^[0-9]+$ && "$model" =~ ^[a-z0-9.-]+$ && "$label" =~ ^[A-Za-z\ .-]+$ ]] || { echo "::error::Bad entry: $source $run"; exit 1; }
+            rm -rf "trial/$run"
+            gh run download "$run" -R "$GITHUB_REPOSITORY" -n "book-rubrics-$source" -D "trial/$run"
+            npx tsx scripts/save-book-rubrics.ts "trial/$run/$source.json" --model "$model" --label "$label" --run "$run"
+          done
+      - name: Commit the file
+        run: |
+          git add public/book-rubrics.json
+          if git diff --cached --quiet; then echo "No change."; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898099+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Save book rubrics from the listed trial runs"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
