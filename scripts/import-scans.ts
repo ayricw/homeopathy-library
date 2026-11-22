@@ -12,6 +12,7 @@
 // CF_ACCESS_CLIENT_SECRET (DEPLOY.md). Normally this runs from the "Import books" GitHub workflow.
 import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { importText } from "../shared/importer";
 import { buildScanText, OCR_CONVERTER_VERSION } from "../shared/ocr";
@@ -24,7 +25,7 @@ const FILES = {
 } as const;
 type FileKey = keyof typeof FILES;
 
-interface ScanSource {
+export interface ScanSource {
   id: string;
   title: string;
   notes?: string | null;
@@ -32,7 +33,7 @@ interface ScanSource {
   [key: string]: unknown;
 }
 
-async function loadSources(only: string[]): Promise<ScanSource[]> {
+export async function loadSources(only: string[]): Promise<ScanSource[]> {
   const dir = new URL("../library/sources/", import.meta.url);
   const all: ScanSource[] = [];
   for (const f of (await readdir(dir)).sort()) {
@@ -61,7 +62,7 @@ async function download(archiveId: string, key: FileKey) {
   }
 }
 
-async function build(source: ScanSource, requirePinned: boolean) {
+export async function build(source: ScanSource, requirePinned: boolean) {
   const id = source.scan.archive_id;
   const files = {} as Record<FileKey, Awaited<ReturnType<typeof download>>>;
   const mismatched: string[] = [];
@@ -190,7 +191,10 @@ async function main() {
   if (failed) process.exit(1);
 }
 
-main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+// Run only when started as a script, so other scripts can reuse loadSources and build.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  main().catch((err) => {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
+}

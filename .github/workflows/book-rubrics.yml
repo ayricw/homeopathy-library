@@ -1,0 +1,72 @@
+# Trial: Claude reads a scanned book and proposes repertory entries, each quoting the book.
+# Started by hand from the Actions tab ("Run workflow"). Nothing is written to the library or the app:
+# the run leaves a report on its summary page and the entries as a downloadable artifact.
+# Costs money (Claude API, batch prices): the run stops starting new batches once max_cost is passed,
+# and the account's own spend limit is the hard ceiling. Needs the ANTHROPIC_API_KEY repository secret.
+# Only book text is sent to Claude, never client records.
+name: Book rubrics trial
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Source id of a scanned book in library/sources
+        default: nash-1901-leaders-2nd-edition
+      models:
+        description: Models to compare, separated by spaces
+        default: claude-opus-5-5 claude-haiku-5-5
+      limit:
+        description: Read only the first N passages (blank for all)
+        required: false
+        default: ""
+      max_cost:
+        description: Stop starting new batches once this many US dollars are spent
+        default: "20"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: book-rubrics
+  cancel-in-progress: false
+
+jobs:
+  trial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      SOURCE: ${{ inputs.source }}
+      MODELS: ${{ inputs.models }}
+      LIMIT: ${{ inputs.limit }}
+      MAX_COST: ${{ inputs.max_cost }}
+      OOREP_URL: https://raw.githubusercontent.com/nondeterministic/oorep/6479a276ed82fd7e0459da527f5ab656f1bbe298/oorep.sql.gz
+      OOREP_SHA256: 0a20753505bd99e1942382f6fca7c6d9a29cd8fad0715ebbade64c1bbf11948e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check the inputs and the API key
+        run: |
+          [ -n "$ANTHROPIC_API_KEY" ] || { echo "::error::Add ANTHROPIC_API_KEY as a repository secret."; exit 1; }
+          [[ "$SOURCE" =~ ^[a-z0-9-]+$ ]] || { echo "::error::Not a source id: $SOURCE"; exit 1; }
+          [[ "$MODELS" =~ ^[a-z0-9.\ -]+$ ]] || { echo "::error::Not a model list: $MODELS"; exit 1; }
+          [[ -z "$LIMIT" || "$LIMIT" =~ ^[0-9]+$ ]] || { echo "::error::Limit must be a number"; exit 1; }
+          [[ "$MAX_COST" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo "::error::max_cost must be a number"; exit 1; }
+      - name: Build the repertory file
+        run: |
+          mkdir -p library/originals
+          curl -fsSL -o library/originals/oorep.sql.gz "$OOREP_URL"
+          echo "$OOREP_SHA256  library/originals/oorep.sql.gz" | sha256sum -c -
+          npm run build:repertory -- library/originals/oorep.sql.gz library/repertories/publicum.json
+      - name: Read the book with Claude
+        run: npx tsx scripts/book-rubrics.ts "$SOURCE" --models "$MODELS" --max-cost "$MAX_COST" ${LIMIT:+--limit "$LIMIT"} --out book-rubrics
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: book-rubrics-${{ inputs.source }}
+          path: book-rubrics/
+          if-no-files-found: ignore
