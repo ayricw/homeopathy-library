@@ -20,6 +20,8 @@ import {
   type RubricTree,
 } from "../shared/repertory";
 import { get, post, type SymptomResponse, type PassageRef, type PassageResponse, type SearchResponse, type Source, type SourceDetail } from "./api";
+import { flagEntry, loadBooks, mergedRepertory, setBooksOn, useBookStore, type BooksView } from "./books";
+import type { BookMark } from "../shared/bookrubrics";
 
 // ---------- tiny hash router: #/search?q=..  #/passage/12  #/sources  #/sources/id ----------
 
@@ -426,17 +428,27 @@ const caseMemory: {
   browseAt: null,
 };
 
-export type LoadedRepertory = { data: RepertoryFile; tokens: string[][]; tree: RubricTree };
+export type LoadedRepertory = {
+  /** The repertory with the books' entries merged in (when any are saved), for browsing and finding rubrics. */
+  data: RepertoryFile;
+  /** What ranking uses: the merged repertory when the books are switched on, else the repertory alone. */
+  rankData: RepertoryFile;
+  tokens: string[][];
+  tree: RubricTree;
+  books: BooksView | null;
+};
 
 // The repertory file is loaded once per page load and searched in the browser.
-let repertoryLoad: Promise<LoadedRepertory | null> | null = null;
+let repertoryLoad: Promise<{ base: RepertoryFile; tokens: string[][]; tree: RubricTree } | null> | null = null;
 function loadRepertory() {
-  repertoryLoad ??= fetch("/data/repertory.json", { headers: { accept: "application/json" } })
-    .then(async (res) => {
+  repertoryLoad ??= Promise.all([fetch("/data/repertory.json", { headers: { accept: "application/json" } }), loadBooks()])
+    .then(async ([res]) => {
       // A missing file falls through to the app's index.html, so check the type.
       if (!res.ok || !(res.headers.get("content-type") ?? "").includes("json")) return null;
-      const data = (await res.json()) as RepertoryFile;
-      return { data, tokens: tokenize(data), tree: buildTree(data) };
+      const base = (await res.json()) as RepertoryFile;
+      // Rubric ids and paths do not change with the switch or the flags, so words and tree are built once.
+      const { data } = mergedRepertory(base);
+      return { base, tokens: tokenize(data), tree: buildTree(data) };
     })
     .catch((e) => {
       repertoryLoad = null;
@@ -445,18 +457,24 @@ function loadRepertory() {
   return repertoryLoad;
 }
 
-export function useRepertory() {
-  const [state, setState] = useState<{ rep?: LoadedRepertory | null; error?: string }>({});
+export function useRepertory(): { rep?: LoadedRepertory | null; error?: string } {
+  const [state, setState] = useState<{ loaded?: { base: RepertoryFile; tokens: string[][]; tree: RubricTree } | null; error?: string }>({});
+  const books = useBookStore();
   useEffect(() => {
     let live = true;
     loadRepertory()
-      .then((rep) => live && setState({ rep }))
+      .then((loaded) => live && setState({ loaded }))
       .catch((e: Error) => live && setState({ error: e.message }));
     return () => {
       live = false;
     };
   }, []);
-  return state;
+  const rep = useMemo(() => {
+    if (!state.loaded) return state.loaded;
+    const { base, tokens, tree } = state.loaded;
+    return { ...mergedRepertory(base), tokens, tree };
+  }, [state.loaded, books.version]);
+  return { rep, error: state.error };
 }
 
 function SymptomsPage() {
@@ -496,17 +514,115 @@ function SymptomsPage() {
 
 const GRADE_LABEL = ["", "grade 1", "grade 2", "grade 3", "grade 4"];
 
-function RubricRemedies({ data, id }: { data: RepertoryFile; id: number }) {
+function RubricRemedies({ data, id, books }: { data: RepertoryFile; id: number; books: BooksView | null }) {
   const list = rubricRemedies(data, id);
+  const marks = books?.marks.get(id);
+  const added = new Set([...(marks ?? [])].filter(([, m]) => m.some((x) => x.added)).map(([r]) => data.remedies[r][0]));
   return (
-    <p className="rubric-remedies">
-      {list.map((r, i) => (
-        <span key={r.abbrev} className={`g${r.grade}`} title={`${r.name}, ${GRADE_LABEL[r.grade]}`}>
-          {r.abbrev}
-          {i < list.length - 1 ? ", " : ""}
-        </span>
+    <>
+      <p className="rubric-remedies">
+        {list.map((r, i) => (
+          <span
+            key={r.abbrev}
+            className={`g${r.grade}${added.has(r.abbrev) ? " book-added" : ""}`}
+            title={added.has(r.abbrev) ? `${r.name}, added from the books` : `${r.name}, ${GRADE_LABEL[r.grade]}`}
+          >
+            {r.abbrev}
+            {i < list.length - 1 ? ", " : ""}
+          </span>
+        ))}
+      </p>
+      {marks && marks.size > 0 && (
+        <BookQuotes
+          data={data}
+          items={[...marks].flatMap(([r, ms]) => ms.map((m) => ({ remedy: r, mark: m })))}
+          summary={`What the books say here (${[...marks.values()].reduce((n, m) => n + m.length, 0)})`}
+        />
+      )}
+    </>
+  );
+}
+
+/** Tag on a rubric the repertory does not have, naming the books it came from. */
+function BookTag({ books, id }: { books: BooksView | null; id: number }) {
+  const labels = books?.newRubrics.get(id);
+  if (!labels) return null;
+  return (
+    <span className="book-tag" title={`Not in the repertory: drawn from ${labels.join(", ")} by Claude, with the book's own words`}>
+      {labels.join(", ")}
+    </span>
+  );
+}
+
+/** The books' own words behind entries, each with a button to mark it wrong. */
+function BookQuotes({
+  data,
+  items,
+  summary,
+  rubricOf,
+  open,
+}: {
+  data: RepertoryFile;
+  items: { remedy: number; mark: BookMark; rubric?: number }[];
+  summary: string;
+  rubricOf?: (id: number) => string;
+  open?: boolean;
+}) {
+  const [flagged, setFlagged] = useState<{ key: string; text: string }[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const mark = async (key: string, wrong: boolean, text: string) => {
+    setError(null);
+    try {
+      await flagEntry(key, wrong);
+      setFlagged((f) => (wrong ? [...f, { key, text }] : f.filter((x) => x.key !== key)));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  return (
+    <details className="book-quotes" open={open}>
+      <summary>{summary}</summary>
+      <ul>
+        {items.map(({ remedy, mark: m, rubric }) => {
+          const name = data.remedies[remedy][1];
+          return (
+            <li key={`${m.key}|${rubric ?? ""}`}>
+              <b>{name}</b>
+              {rubric !== undefined && rubricOf && <span className="muted"> · {rubricOf(rubric)}</span>}
+              {m.added ? <span className="book-tag">{m.label}</span> : <span className="muted small"> (repertory agrees)</span>}
+              <q>{m.quote}</q>
+              <span className="muted small">
+                {m.title}
+                {m.page ? `, p. ${m.page}` : ""}
+              </span>
+              <button type="button" className="secondary small-btn" onClick={() => mark(m.key, true, `${name}: ${m.quote}`)}>
+                Wrong
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {flagged.map((f) => (
+        <p key={f.key} className="muted small">
+          Marked wrong and hidden: {f.text}{" "}
+          <button type="button" className="link" onClick={() => mark(f.key, false, f.text)}>
+            Undo
+          </button>
+        </p>
       ))}
-    </p>
+      {error && <p className="error">{error}</p>}
+    </details>
+  );
+}
+
+/** The on/off switch for the books' entries, shown with the remedy results. */
+function BooksSwitch({ books }: { books: BooksView | null }) {
+  if (!books) return null;
+  return (
+    <label className="books-switch">
+      <input type="checkbox" checked={books.on} onChange={(e) => setBooksOn(e.target.checked)} />
+      Include entries from the books ({books.labels.join(", ")})
+    </label>
   );
 }
 
@@ -566,7 +682,7 @@ export const liveRubrics = (data: RepertoryFile, rubrics: Rubric[]) => rubrics.f
 
 /** Browse the tree or find a rubric by its words, and add it to the case. */
 export function RubricPicker({
-  rep: { data: rep, tokens, tree },
+  rep: { data: rep, tokens, tree, books },
   rubrics,
   setRubrics,
 }: {
@@ -605,7 +721,7 @@ export function RubricPicker({
         </button>
       </div>
       {mode === "browse" ? (
-        <RubricBrowser data={rep} tree={tree} at={browseAt} goTo={goTo} ids={ids} full={full} add={add} />
+        <RubricBrowser data={rep} books={books} tree={tree} at={browseAt} goTo={goTo} ids={ids} full={full} add={add} />
       ) : (
         <>
           <form
@@ -641,6 +757,7 @@ export function RubricPicker({
                         <button type="button" className="link" aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)}>
                           {r.path}
                         </button>
+                        <BookTag books={books} id={r.id} />
                         <span className="muted count">{r.remedyCount}</span>
                         <button type="button" className="secondary small-btn" onClick={() => (goTo(tree.byPath.get(r.path) ?? null), setMode("browse"))}>
                           In tree
@@ -649,7 +766,7 @@ export function RubricPicker({
                           {inCase ? "Added ✓" : "Add"}
                         </button>
                       </div>
-                      {open === r.id && <RubricRemedies data={rep} id={r.id} />}
+                      {open === r.id && <RubricRemedies data={rep} id={r.id} books={books} />}
                     </li>
                   );
                 })}
@@ -687,7 +804,7 @@ export const readAbout = (name: string) => `#/search?q=${encodeURIComponent(name
 
 /** The ranked remedies: the top few as cards with full names, then the full grid. */
 export function CaseResults({
-  rep: { data: rep },
+  rep: { data: rep, rankData, books },
   rubrics,
   setRubrics,
   method,
@@ -705,7 +822,13 @@ export function CaseResults({
   onChoose?: (name: string) => void;
 }) {
   const ids = rubrics.map((r) => r.id);
-  const ranked = useMemo(() => repertorize(rep, ids, method), [rep, ids.join(","), method]);
+  const ranked = useMemo(() => repertorize(rankData, ids, method), [rankData, ids.join(","), method]);
+  // Entries the books add (not already in the repertory) to each remedy, across the case's rubrics.
+  const bookAdds = (remedy: number) =>
+    !books?.on
+      ? []
+      : ids.flatMap((id) => (books.marks.get(id)?.get(remedy) ?? []).filter((m) => m.added).map((mark) => ({ remedy, mark, rubric: id })));
+  const pathOf = (id: number) => rep.rubrics[id]?.[0] ?? "";
   const shown = ranked.slice(0, 30);
   const top = ranked.slice(0, 5);
   const [grid, setGrid] = useState(false);
@@ -725,8 +848,11 @@ export function CaseResults({
         <p className="muted">No rubrics yet. Add some and the remedies that cover them appear here.</p>
       ) : (
         <>
+          <BooksSwitch books={books} />
           <ol className="top-remedies">
-            {top.map((m, i) => (
+            {top.map((m, i) => {
+              const adds = bookAdds(m.index);
+              return (
               <li key={m.index} className={i === 0 ? "first" : undefined}>
                 <b>{m.name}</b>
                 <span className="meter" aria-hidden="true">
@@ -743,8 +869,17 @@ export function CaseResults({
                     </button>
                   )}
                 </span>
+                {adds.length > 0 && (
+                  <BookQuotes
+                    data={rep}
+                    items={adds}
+                    rubricOf={pathOf}
+                    summary={`${adds.length} rubric${adds.length === 1 ? "" : "s"} from the books (${[...new Set(adds.map((a) => a.mark.label))].join(", ")})`}
+                  />
+                )}
               </li>
-            ))}
+              );
+            })}
           </ol>
           <details className="grid-details" open={grid} onToggle={(e) => setGrid(e.currentTarget.open)}>
             <summary>
@@ -787,19 +922,30 @@ export function CaseResults({
                           ×
                         </button>
                         {r.path}
+                        <BookTag books={books} id={r.id} />
                         <small>{r.remedyCount}</small>
                       </th>
-                      {shown.map((m) => (
-                        <td key={m.index} className="rep-cell">
-                          {m.grades[row] > 0 && <span className={`dot g${m.grades[row]}`} title={`${m.name}: ${GRADE_LABEL[m.grades[row]]}`} />}
-                        </td>
-                      ))}
+                      {shown.map((m) => {
+                        const fromBook = books?.on ? books.marks.get(r.id)?.get(m.index)?.find((x) => x.added) : undefined;
+                        return (
+                          <td key={m.index} className="rep-cell">
+                            {m.grades[row] > 0 && (
+                              <span
+                                className={`dot g${m.grades[row]}${fromBook ? " book" : ""}`}
+                                title={fromBook ? `${m.name}: from ${fromBook.label}, “${fromBook.quote}”` : `${m.name}: ${GRADE_LABEL[m.grades[row]]}`}
+                              />
+                            )}
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <p className="muted small">Larger dots are higher grades. Hover a remedy for its full name.</p>
+            <p className="muted small">
+              Larger dots are higher grades{books?.on ? "; hollow dots come from the books" : ""}. Hover a remedy for its full name.
+            </p>
           </details>
           <p className="muted small">This is what the repertory lists, not a prescription.</p>
         </>
@@ -810,6 +956,7 @@ export function CaseResults({
 
 function RubricBrowser({
   data,
+  books,
   tree,
   at,
   goTo,
@@ -818,6 +965,7 @@ function RubricBrowser({
   add,
 }: {
   data: RepertoryFile;
+  books: BooksView | null;
   tree: RubricTree;
   at: number | null;
   goTo: (n: number | null) => void;
@@ -888,7 +1036,7 @@ function RubricBrowser({
           {addButton(node.id)}
         </div>
       )}
-      {node.id !== null && open === -1 && <RubricRemedies data={data} id={node.id} />}
+      {node.id !== null && open === -1 && <RubricRemedies data={data} id={node.id} books={books} />}
       {node.children.length > 0 && (
         <>
           <label htmlFor="browse-filter" className="visually-hidden">
@@ -918,10 +1066,11 @@ function RubricBrowser({
                         {child.label}
                       </button>
                     )}
+                    {child.id !== null && <BookTag books={books} id={child.id} />}
                     {child.id !== null && <span className="muted count">{child.remedyCount}</span>}
                     {child.id !== null && addButton(child.id)}
                   </div>
-                  {open === c && child.id !== null && <RubricRemedies data={data} id={child.id} />}
+                  {open === c && child.id !== null && <RubricRemedies data={data} id={child.id} books={books} />}
                 </li>
               );
             })}

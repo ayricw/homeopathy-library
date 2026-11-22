@@ -556,3 +556,18 @@ main:has(> .home) { max-width: 64rem; }
 .remedy-chosen label { font-weight: 600; }
 .notice a { color: inherit; }
 .small, .case-side .muted { font-family: var(--ui); }
+
+/* Entries drawn from the books by Claude (book-rubrics.json) */
+.book-tag {
+  display: inline-block; margin: 0 0.35rem; padding: 0 0.4rem; border-radius: 999px;
+  font: 600 11px/1.6 var(--ui); color: var(--brass); border: 1px solid var(--brass); white-space: nowrap;
+}
+.rubric-remedies .book-added { text-decoration: underline dotted var(--brass); text-underline-offset: 3px; color: var(--brass); }
+.dot.book { background: transparent; border: 2px solid var(--brass); opacity: 1; width: 9px; height: 9px; }
+.books-switch { display: flex; gap: 0.5rem; align-items: center; margin: 0.25rem 0 0.75rem; font: 14px var(--ui); }
+.book-quotes { margin: 0.35rem 0 0.5rem; font: 14px/1.5 var(--ui); grid-column: 1 / -1; }
+.book-quotes summary { cursor: pointer; color: var(--brass); font-weight: 600; }
+.book-quotes ul { list-style: none; margin: 0.4rem 0 0; padding: 0; display: grid; gap: 0.5rem; }
+.book-quotes li { padding: 0.4rem 0.6rem; border-left: 3px solid var(--brass); background: var(--raised); border-radius: 6px; }
+.book-quotes q { display: block; margin: 0.2rem 0; font-family: var(--serif); }
+.book-quotes .small-btn { margin-left: 0.5rem; }

@@ -345,7 +345,7 @@ function VisitEditor({ rep, visit, client }: { rep: LoadedRepertory; visit: Visi
   const inCase = new Set(rubrics.map((r) => r.id));
   const waiting = suggestions.filter((s) => !inCase.has(s.id)).length;
   const answered = FORMS[kind].flatMap((s) => s.questions).filter((q) => answers[q.id]?.trim() || answers[`${q.id}-more`]?.trim()).length;
-  const ranked = useMemo(() => repertorize(rep.data, rubrics.map((r) => r.id), method), [rep.data, rubrics.map((r) => r.id).join(","), method]);
+  const ranked = useMemo(() => repertorize(rep.rankData, rubrics.map((r) => r.id), method), [rep.rankData, rubrics.map((r) => r.id).join(","), method]);
 
   const steps: { id: Step; title: string; note: string }[] = [
     { id: "case", title: "1 · Case", note: `${answered} answer${answered === 1 ? "" : "s"}` },

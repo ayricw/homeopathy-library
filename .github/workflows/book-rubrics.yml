@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       source:
-        description: Source id of a scanned book in library/sources
+        description: Source id of a scanned book in library/sources, or "library" for every book and note in the dev library not yet saved
         default: nash-1901-leaders-2nd-edition
       models:
         description: Models to compare, separated by spaces
@@ -20,7 +20,7 @@ on:
         required: false
         default: ""
       max_cost:
-        description: Stop starting new batches once this many US dollars are spent
+        description: Stop starting new batches once this many US dollars are spent (0 lists what would be read, at no cost)
         default: "20"
 
 permissions:
@@ -40,6 +40,10 @@ jobs:
       MODELS: ${{ inputs.models }}
       LIMIT: ${{ inputs.limit }}
       MAX_COST: ${{ inputs.max_cost }}
+      # Only used with source "library", to read the passages from the dev database.
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      D1_DATABASE_ID: 6383eec8-66b0-4b5c-852a-cfdb05a37364
       OOREP_URL: https://raw.githubusercontent.com/nondeterministic/oorep/6479a276ed82fd7e0459da527f5ab656f1bbe298/oorep.sql.gz
       OOREP_SHA256: 0a20753505bd99e1942382f6fca7c6d9a29cd8fad0715ebbade64c1bbf11948e
     steps:
