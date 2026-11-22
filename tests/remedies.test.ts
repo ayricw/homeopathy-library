@@ -106,3 +106,19 @@ describe("power score", () => {
     expect(p(keyed, "Puls.") - p(keyed, "Kali-c.")).toBeGreaterThan(p(plain, "Puls.") - p(plain, "Kali-c."));
   });
 });
+
+describe("standouts and must have", () => {
+  it("lists the strongest remedies per rubric, finds standouts and eliminates", async () => {
+    const { repertorize } = await import("../shared/repertory");
+    const { mustHave, standoutOf, strongestByRubric } = await import("../shared/standout");
+    const ids = [0, 1, 2];
+    const ranked = repertorize(data, ids);
+    const s = strongestByRubric(data, ids, ranked);
+    expect(s[0]).toMatchObject({ grade: 3, remedies: [{ index: 1 }] });
+    expect(s[2]).toMatchObject({ grade: 2, remedies: [{ index: 2 }] });
+    const kali = ranked.find((r) => r.abbrev === "Kali-c.")!;
+    expect(standoutOf(data, ids, kali)).toEqual({ id: 0, remedyCount: 2 });
+    expect(mustHave(ranked, [2]).map((r) => r.abbrev)).toEqual(["Puls."]);
+    expect(mustHave(ranked, [])).toHaveLength(ranked.length);
+  });
+});
