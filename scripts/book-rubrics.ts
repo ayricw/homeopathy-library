@@ -95,9 +95,24 @@ function cost(model: string, u: Anthropic.Messages.Usage) {
   return (input * p.input + u.output_tokens * p.output) / 1e6;
 }
 
-async function runModel(client: Anthropic, model: string, jobs: Job[], system: string, budget: { spent: number }) {
-  const entries: BookEntry[] = [];
-  const dropped: (ProposedEntry & { ordinal: number })[] = [];
+type ModelResult = {
+  model: string;
+  entries: (BookEntry & { job: string })[];
+  dropped: (ProposedEntry & { job: string })[];
+  usage: { input: number; output: number; cacheRead: number; cacheWrite: number; requests: number; failed: number; refused: number };
+  passagesDone: number;
+};
+
+async function runModel(
+  client: Anthropic,
+  model: string,
+  jobs: Job[],
+  system: string,
+  budget: { spent: number },
+  onChunk: (r: ModelResult) => void = () => {},
+): Promise<ModelResult> {
+  const entries: ModelResult["entries"] = [];
+  const dropped: ModelResult["dropped"] = [];
   const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, requests: 0, failed: 0, refused: 0 };
   let done = 0;
   for (let start = 0; start < jobs.length; start += CHUNK) {
@@ -157,11 +172,12 @@ async function runModel(client: Anthropic, model: string, jobs: Job[], system: s
         continue;
       }
       const checked = checkEntries(index, job.passage, proposed);
-      entries.push(...checked.kept);
-      dropped.push(...checked.dropped.map((d) => ({ ...d, ordinal: job.passage.ordinal })));
+      entries.push(...checked.kept.map((e) => ({ ...e, job: job.id })));
+      dropped.push(...checked.dropped.map((d) => ({ ...d, job: job.id })));
     }
     done += chunk.length;
     console.log(`${model}: ${done}/${jobs.length} passages, ${entries.length} entries kept, $${budget.spent.toFixed(2)} spent in total.`);
+    onChunk({ model, entries, dropped, usage, passagesDone: done });
   }
   return { model, entries, dropped, usage, passagesDone: done };
 }
@@ -200,7 +216,9 @@ async function fromScan(id: string): Promise<Book> {
   return { id, title: source.title, label: surname(String(source.author ?? source.title)), kind: "book", jobs: toJobs(id, "book", source.title, split.passages) };
 }
 
-const CASE_LIKE = /\b(case|cases|client|clients|patient|patients|intake|form|forms|questionnaire|consent|follow[\s-]?up)\b/i;
+const CASE_LIKE = /case|client|patient|intake|\bforms?\b|questionnaire|consent|follow[\s-]?up|template|example/i;
+// Not a homeopathy text: left out to save cost.
+const NOT_READ = /oceanofpdf/i;
 
 type PassageRow = {
   ordinal: number;
@@ -241,6 +259,10 @@ async function fromLibrary(skip: Set<string>): Promise<Book[]> {
     // Client data is never sent to Claude: notes that look like case files or forms are left out.
     if (s.kind === "notes" && CASE_LIKE.test(`${s.title} ${s.id}`)) {
       console.log(`${s.id}: looks like a case file or form, not sent.`);
+      continue;
+    }
+    if (NOT_READ.test(s.id)) {
+      console.log(`${s.id}: not a homeopathy text, skipped.`);
       continue;
     }
     const passages: Passage[] = [];
@@ -291,27 +313,29 @@ const client = new Anthropic();
 const system = systemPrompt(chapters(repertory));
 const budget = { spent: 0 };
 mkdirSync(outDir, { recursive: true });
-const done: { book: Book; results: Awaited<ReturnType<typeof runModel>>[] }[] = [];
-for (const book of books) {
-  if (book.jobs.length === 0) continue;
-  if (budget.spent >= maxCost) {
-    console.log(`Cap reached: ${book.id} and the sources after it were not read.`);
-    break;
-  }
-  const results = [];
-  for (const model of models) results.push(await runModel(client, model, book.jobs, system, budget));
-  done.push({ book, results });
-  // Written as each source finishes, so a run stopped by the cap or a timeout keeps what it read.
-  writeFileSync(
-    `${outDir}/${book.id}.json`,
-    JSON.stringify({
-      source: book.id,
-      title: book.title,
-      label: book.label,
-      kind: book.kind,
-      results: results.map((r) => ({ model: r.model, entries: r.entries, dropped: r.dropped.length, usage: r.usage, passagesDone: r.passagesDone, passages: book.jobs.length })),
-    }),
-  );
+// One list of passages across every source, so small sources share batches instead of waiting in turn.
+// Books come first (the library query sorts them before notes), so a cap stops on notes, not books.
+const prefix = (i: number) => `b${i}-`;
+const allJobs = books.flatMap((b, i) => b.jobs.map((j) => ({ ...j, id: prefix(i) + j.id })));
+
+/** Writes one file per source with what has been read so far, so a stopped run keeps its work. */
+function writeSources(results: ModelResult[]) {
+  books.forEach((book, i) => {
+    const mine = results.map((r) => ({
+      model: r.model,
+      entries: r.entries.filter((e) => e.job.startsWith(prefix(i))),
+      dropped: r.dropped.filter((d) => d.job.startsWith(prefix(i))).length,
+    }));
+    if (mine.every((r) => r.entries.length === 0)) return;
+    writeFileSync(`${outDir}/${book.id}.json`, JSON.stringify({ source: book.id, title: book.title, label: book.label, kind: book.kind, results: mine }));
+  });
+}
+
+const results: ModelResult[] = [];
+for (const model of models) {
+  const r = await runModel(client, model, allJobs, system, budget, (partial) => writeSources([...results, partial]));
+  results.push(r);
+  writeSources(results);
 }
 
 // ---------- report ----------
@@ -323,28 +347,30 @@ const seeded = (n: number) => {
 };
 const cell = (s: string) => s.replace(/\|/g, "/");
 const title = books.length === 1 ? books[0].title : `the library (${books.length} sources)`;
-const lines: string[] = [`# Book rubrics: ${title}`, "", `${totalJobs} passages to read. Total cost $${budget.spent.toFixed(2)} (batch prices).`, ""];
-lines.push("| Source | Model | Passages read | Entries kept | Match a repertory rubric exactly | Remedy recognised | Dropped (quote not found) | Failed / refused | Cost |");
-lines.push("|---|---|---|---|---|---|---|---|---|");
-for (const { book, results } of done) {
-  for (const r of results) {
-    const c = cost(r.model, {
-      input_tokens: r.usage.input,
-      output_tokens: r.usage.output,
-      cache_read_input_tokens: r.usage.cacheRead,
-      cache_creation_input_tokens: r.usage.cacheWrite,
-    } as Anthropic.Messages.Usage);
-    lines.push(
-      `| ${cell(book.title)} | ${r.model} | ${r.passagesDone} / ${book.jobs.length} | ${r.entries.length} | ${pct(r.entries.filter((e) => e.rubricPath).length, r.entries.length)} | ${pct(r.entries.filter((e) => e.remedyIndex !== null).length, r.entries.length)} | ${r.dropped.length} | ${r.usage.failed} / ${r.usage.refused} | $${c.toFixed(2)} |`,
-    );
-  }
+const lines: string[] = [`# Book rubrics: ${title}`, "", `${allJobs.length} passages to read. Total cost $${budget.spent.toFixed(2)} (batch prices).`, ""];
+lines.push("| Model | Passages read | Entries kept | Match a repertory rubric exactly | Remedy recognised | Dropped (quote not found) | Failed / refused | Cost |");
+lines.push("|---|---|---|---|---|---|---|---|");
+for (const r of results) {
+  const c = cost(r.model, {
+    input_tokens: r.usage.input,
+    output_tokens: r.usage.output,
+    cache_read_input_tokens: r.usage.cacheRead,
+    cache_creation_input_tokens: r.usage.cacheWrite,
+  } as Anthropic.Messages.Usage);
+  lines.push(
+    `| ${r.model} | ${r.passagesDone} / ${allJobs.length} | ${r.entries.length} | ${pct(r.entries.filter((e) => e.rubricPath).length, r.entries.length)} | ${pct(r.entries.filter((e) => e.remedyIndex !== null).length, r.entries.length)} | ${r.dropped.length} | ${r.usage.failed} / ${r.usage.refused} | $${c.toFixed(2)} |`,
+  );
 }
-for (const model of models) {
-  const all = done.flatMap(({ book, results }) => results.filter((r) => r.model === model).flatMap((r) => r.entries.map((e) => ({ ...e, book: book.label }))));
+if (books.length > 1) {
+  lines.push("", "| Source | Passages | Entries kept (per model) |", "|---|---|---|");
+  books.forEach((b, i) => lines.push(`| ${cell(b.title)} | ${b.jobs.length} | ${results.map((r) => r.entries.filter((e) => e.job.startsWith(prefix(i))).length).join(" / ")} |`));
+}
+for (const r of results) {
+  const label = (job: string) => books[Number(job.slice(1, job.indexOf("-")))]?.label ?? "";
   const rnd = seeded(42);
-  const sample = [...all].sort(() => rnd() - 0.5).slice(0, 40);
-  lines.push("", `## 40 random entries from ${model}`, "", "| Source | Remedy | Rubric | In repertory? | Quote | Page |", "|---|---|---|---|---|---|");
-  for (const e of sample) lines.push(`| ${e.book} | ${cell(e.remedy)} | ${cell(e.rubric)} | ${e.rubricPath ? "yes" : "new"} | “${cell(e.quote)}” | ${e.passage.pageStart ?? "?"} |`);
+  const sample = [...r.entries].sort(() => rnd() - 0.5).slice(0, 40);
+  lines.push("", `## 40 random entries from ${r.model}`, "", "| Source | Remedy | Rubric | In repertory? | Quote | Page |", "|---|---|---|---|---|---|");
+  for (const e of sample) lines.push(`| ${label(e.job)} | ${cell(e.remedy)} | ${cell(e.rubric)} | ${e.rubricPath ? "yes" : "new"} | “${cell(e.quote)}” | ${e.passage.pageStart ?? "?"} |`);
 }
 const report = lines.join("\n");
 writeFileSync(`${outDir}/report.md`, report);
