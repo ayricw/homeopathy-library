@@ -2,7 +2,7 @@ import { ArrowLeft, Printer } from "lucide-react";
 import { repertorize } from "../shared/repertory";
 import type { PreviousVisit, Visit } from "./api";
 import { Logo, shortDate } from "./HomePage";
-import { Status, useFetch, useRepertory, type AppConfig, type LoadedRepertory } from "./App";
+import { pct, Status, useFetch, useRepertory, type AppConfig, type LoadedRepertory } from "./App";
 import { FORMS, KIND_LABEL } from "./intake";
 import { prescription, RESPONSE_LABEL } from "./ClientsPages";
 
@@ -146,9 +146,11 @@ function Report({ data: { visit, client, previous }, rep }: { data: Loaded; rep:
                   <td>{i + 1}</td>
                   <td>{m.name}</td>
                   <td>
-                    {m.covered} of {ids.length}
+                    {m.covered} of {ids.length} ({pct(m.covered, ids.length)}%)
                   </td>
-                  <td>{m.total}</td>
+                  <td>
+                    {m.total} of {ids.length * 3} ({pct(m.total, ids.length * 3)}%)
+                  </td>
                 </tr>
               ))}
             </tbody>

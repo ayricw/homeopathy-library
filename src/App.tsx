@@ -1183,6 +1183,9 @@ export function remedySearch(name: string, data?: RepertoryFile): string {
 }
 
 /** The ranked remedies: the top few as cards with full names, then the full grid. */
+/** A whole-number percentage, for the remedy cards and report. */
+export const pct = (n: number, of: number) => (of > 0 ? Math.round((n / of) * 100) : 0);
+
 export function CaseResults({
   rep: { data: rep, rankData, books },
   rubrics,
@@ -1247,11 +1250,14 @@ export function CaseResults({
                 <a className="top-name" href={remedyHref(m.abbrev)}>
                   {m.name}
                 </a>
+                <span className="match">
+                  <b>{pct(m.covered, rubrics.length)}%</b> of rubrics
+                </span>
                 <span className="meter" aria-hidden="true">
                   <i style={{ width: `${(m.covered / rubrics.length) * 100}%` }} />
                 </span>
                 <span className="muted small">
-                  {m.covered} of {rubrics.length} rubric{rubrics.length === 1 ? "" : "s"} · grade {m.total}
+                  {m.covered} of {rubrics.length} rubric{rubrics.length === 1 ? "" : "s"} · grade {m.total} of {rubrics.length * 3} ({pct(m.total, rubrics.length * 3)}%)
                 </span>
                 <span className="top-actions">
                   <a href={readAbout(m.name, rep)}>Read about it →</a>
