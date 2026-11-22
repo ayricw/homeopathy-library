@@ -1256,7 +1256,13 @@ export function CaseResults({
                 <span className="top-actions">
                   <a href={readAbout(m.name, rep)}>Read about it →</a>
                   {onChoose && (
-                    <button type="button" className={chosen === m.name ? "small-btn" : "secondary small-btn"} onClick={() => onChoose(m.name)} disabled={chosen === m.name}>
+                    <button
+                      type="button"
+                      className={chosen === m.name ? "small-btn" : "secondary small-btn"}
+                      onClick={() => onChoose(chosen === m.name ? "" : m.name)}
+                      aria-pressed={chosen === m.name}
+                      title={chosen === m.name ? "Tap again to unchoose" : undefined}
+                    >
                       {chosen === m.name ? "Chosen ✓" : "Choose"}
                     </button>
                   )}
